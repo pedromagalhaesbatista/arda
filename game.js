@@ -1,0 +1,1508 @@
+"use strict";
+
+(() => {
+  const $ = id => document.getElementById(id);
+  const canvas = $("world");
+  const c = canvas.getContext("2d");
+  const minimap = $("minimap");
+  const mini = minimap.getContext("2d");
+  const tile = Art.size;
+
+  const creatureNames = { rat: "Cellar rat", wolf: "Wolf" };
+  const markerActions = { keeper: "Talk", miller: "Talk", gardener: "Talk", ledger: "Take", notice: "Read" };
+  const movement = {
+    w: [0, -1], a: [-1, 0], s: [0, 1], d: [1, 0],
+    arrowup: [0, -1], arrowleft: [-1, 0], arrowdown: [0, 1], arrowright: [1, 0]
+  };
+
+  const numpad = {
+    Numpad1: [-1, 1], Numpad2: [0, 1], Numpad3: [1, 1], Numpad4: [-1, 0],
+    Numpad6: [1, 0], Numpad7: [-1, -1], Numpad8: [0, -1], Numpad9: [1, -1]
+  };
+
+  const worlds = { shire: Shire.create(), bree: World.seed() };
+  const worldRevisions = Object.fromEntries(Object.entries(worlds).map(([id, world]) => [id, Saves.revision(world)]));
+  let selectedWorld = "shire";
+  let loadMessage = "";
+  try {
+    const saved = localStorage.getItem(Saves.mapKey);
+    if (saved) {
+      worlds.custom = World.validate(JSON.parse(saved));
+      worldRevisions.custom = Saves.revision(worlds.custom);
+      selectedWorld = "custom";
+    }
+    const previous = localStorage.getItem(Saves.selectionKey);
+    if (Object.hasOwn(worlds, previous)) selectedWorld = previous;
+  } catch {
+    loadMessage = "The saved editor map could not be loaded.";
+  }
+  let map = structuredClone(worlds[selectedWorld]);
+  let playRevision = null;
+  let saveKey = null;
+  let saveRaw = null;
+  let saveBlocked = false;
+  let savePending = false;
+  let saveAfter = 0;
+
+  let player;
+  let entities = [];
+  let loot = [];
+  let combatText = [];
+  let inventoryDirty = true;
+  let draggedItem = null;
+  let nextChase = 0;
+  let target = null;
+  let quest = "available";
+  let ratsDefeated = 0;
+  let hasLedger = false;
+  let path = [];
+  let nextMove = 0;
+  let nextAttack = 0;
+  let pendingInteraction = null;
+  let edit = false;
+  let editFloor = World.findStart(map).z;
+  let editorCenter = World.findStart(map);
+  let layer = "ground";
+  const brushes = { ground: "path", objects: "tree", markers: "start" };
+  let hover = null;
+  let gesture = null;
+  let undo = [];
+  let redo = [];
+  let needsRefresh = true;
+  const held = new Map();
+  const view = { x: 0, y: 0 };
+  let lastTick = 0;
+
+  const currentFloor = () => World.floorAt(map, edit ? editFloor : player.z);
+  const distance = (a, b) => Math.max(Math.abs(a.x - b.x), Math.abs(a.y - b.y));
+  const here = (x, y, z = player.z) => entities.find(entity => entity.hp > 0 && entity.z === z && entity.x === x && entity.y === y);
+
+  function journal(message) {
+    const list = $("journal");
+    const entry = document.createElement("li");
+    entry.textContent = message;
+    list.append(entry);
+    if (list.childElementCount > 60) list.firstElementChild.remove();
+    list.scrollTop = list.scrollHeight;
+  }
+
+  function resetPlay() {
+    const start = World.findStart(map);
+    player = {
+      ...start, hp: 30, maxHp: 30, xp: 0, level: 1, face: OpenTibia.Direction.South,
+      kit: Equipment.starterKit(), stance: "balanced", pursuit: "stand",
+      sword: { level: 10, tries: 0, goal: 8 }, shielding: { level: 10, tries: 0, goal: 8 },
+    };
+    inventoryDirty = true;
+    draggedItem = null;
+    combatText = [];
+    $("backpack-panel").hidden = false;
+    entities = [];
+    for (const floor of map.floors) {
+      for (const [key, marker] of Object.entries(floor.markers)) {
+        if (!["keeper", "gardener", "miller", "wolf", "rat"].includes(marker.type)) continue;
+        const [x, y] = key.split(",").map(Number);
+        const hp = marker.type === "wolf" ? 16 : 8;
+        entities.push({ x, y, z: floor.z, origin: { x, y }, type: marker.type, hp, maxHp: hp, face: OpenTibia.Direction.South, nextMove: 0, nextHit: 0 });
+      }
+    }
+    loot = [];
+    target = null;
+    path = [];
+    pendingInteraction = null;
+    quest = "available";
+    ratsDefeated = 0;
+    hasLedger = false;
+    nextAttack = nextMove = nextChase = 0;
+    needsRefresh = true;
+  }
+
+  function saveStatus(message) {
+    const element = $("game-save-status");
+    if (element.textContent !== message) element.textContent = message;
+  }
+
+  function characterSnapshot() {
+    const floor = currentFloor();
+    const steppingIntoLink = player.motion && floor.markers[World.key(player.x, player.y)]?.type === "link";
+    const position = steppingIntoLink ? player.motion.from : player;
+    const { z, hp, maxHp, xp, level, face, kit, stance, pursuit, sword, shielding } = player;
+    const creatures = Object.fromEntries(entities.filter(entity => creatureNames[entity.type]).map(entity => {
+      const { x, y, z, hp, face } = entity;
+      return [Saves.actorKey(entity), { x, y, z, hp, face }];
+    }));
+    return {
+      version: 1, player: { x: position.x, y: position.y, z, hp, maxHp, xp, level, face, kit, stance, pursuit, sword, shielding },
+      quest, ratsDefeated, hasLedger, creatures, loot,
+    };
+  }
+
+  function saveProgress(force = false) {
+    if (edit || !saveKey || saveBlocked || (!force && !savePending && !needsRefresh)) return;
+    try {
+      saveRaw = Saves.write(saveKey, characterSnapshot(), saveRaw);
+      savePending = false;
+      saveAfter = performance.now() + 180;
+      saveStatus("Saved on this device");
+    } catch (error) {
+      saveBlocked = true;
+      $("save-game").disabled = true;
+      saveStatus(error.name === "QuotaExceededError" ? "Browser storage is full." : error.message);
+    }
+  }
+
+  function resumePlay() {
+    const revision = Saves.revision(map);
+    const key = revision === worldRevisions[selectedWorld] ? Saves.progressKey(selectedWorld, revision) : null;
+    if (playRevision === revision && saveKey === key) return "continued";
+    const keepPlaytest = playRevision === revision && !saveKey && key;
+    if (!keepPlaytest) resetPlay();
+    playRevision = revision;
+    saveKey = key;
+    saveRaw = null;
+    saveBlocked = false;
+    savePending = !!key;
+    saveAfter = 0;
+    $("save-game").disabled = !key;
+    $("export-save").disabled = !key;
+    $("import-save").disabled = !key;
+    if (!key) {
+      saveStatus("Playtest · save the map to keep progress");
+      return "new";
+    }
+
+    try {
+      const result = Saves.read(key, map, entities.filter(entity => creatureNames[entity.type]));
+      saveRaw = result.raw;
+      saveStatus(result.value ? "Saved on this device" : "Autosave on");
+      if (!result.value) return keepPlaytest ? "continued" : "new";
+      const data = result.value;
+      for (const field of Object.keys(player)) {
+        if (Object.hasOwn(data.player, field)) player[field] = data.player[field];
+      }
+      const readyAt = performance.now() + Combat.swingInterval;
+      for (const entity of entities) {
+        if (!creatureNames[entity.type]) continue;
+        const { x, y, hp, face } = data.creatures[Saves.actorKey(entity)];
+        Object.assign(entity, { x, y, hp, face, nextHit: readyAt });
+      }
+      ({ quest, ratsDefeated, hasLedger, loot } = data);
+      return "restored";
+    } catch {
+      saveBlocked = true;
+      $("save-game").disabled = true;
+      saveStatus("Save unavailable · progress is temporary");
+      return "new";
+    }
+  }
+
+  function downloadJson(value, filename) {
+    const url = URL.createObjectURL(new Blob([JSON.stringify(value)], { type: "application/json" }));
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = filename;
+    link.click();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+  }
+
+  function exportCharacter() {
+    if (edit || !saveKey) return;
+    downloadJson({ format: "arda-save", version: 1, revision: playRevision, mapName: map.name,
+      progress: characterSnapshot() }, `arda-${selectedWorld}-save.json`);
+    journal("Character save exported.");
+  }
+
+  async function importCharacter(event) {
+    const file = event.target.files[0];
+    event.target.value = "";
+    if (!file || edit || !saveKey) return;
+    const key = saveKey;
+    try {
+      if (file.size > 8_000_000) throw new Error("Character saves must be smaller than 8 MB.");
+      const data = JSON.parse(await file.text());
+      if (edit || saveKey !== key) return;
+      if (data?.format !== "arda-save" || data.version !== 1) throw new Error("Choose an Arda character save.");
+      if (data.revision !== playRevision) throw new Error("Open the matching map before importing this save.");
+      if (!Saves.valid(data.progress, map, entities.filter(entity => creatureNames[entity.type]))) {
+        throw new Error("The character save is unreadable.");
+      }
+      const current = localStorage.getItem(key);
+      if (current !== null && !confirm("Replace the character and quest progress for this map with the imported save?")) return;
+      Saves.write(key, data.progress, current);
+      playRevision = null;
+      announcePlay(resumePlay());
+      journal("Character save imported.");
+    } catch (error) {
+      journal(`Import failed. ${error.message}`);
+    }
+  }
+
+  function syncWorldSelect() {
+    const select = $("world-select");
+    select.replaceChildren();
+    for (const [id, world] of Object.entries(worlds)) {
+      const option = document.createElement("option");
+      option.value = id;
+      option.textContent = id === "custom" ? `${world.name} (custom)` : world.name;
+      select.append(option);
+    }
+    select.value = selectedWorld;
+  }
+
+  function rememberWorld() {
+    try { localStorage.setItem(Saves.selectionKey, selectedWorld); } catch {
+      // The game can still use the selection for the current session.
+    }
+  }
+
+  function announcePlay(state) {
+    if (state === "restored") {
+      journal(`You resume in ${currentFloor().name}.`);
+    } else if (map.adventure === "shire") {
+      journal("You arrive in Hobbiton. Bag End is up the lane, past Sam Gamgee’s garden.");
+      journal("Follow the lane east to the mill if you’re looking for work.");
+    } else if (map.name === "Bree") {
+      journal("You arrive in Bree, outside the Prancing Pony.");
+      journal("Speak to the innkeeper in the courtyard to find work.");
+    } else {
+      journal(`You arrive in ${map.name}.`);
+    }
+  }
+
+  function switchWorld(id) {
+    if (!Object.hasOwn(worlds, id) || id === selectedWorld) return;
+    finishPaint();
+    if (Saves.revision(map) !== worldRevisions[selectedWorld] &&
+        !confirm("Switch worlds and discard the unsaved map edits?")) {
+      $("world-select").value = selectedWorld;
+      return;
+    }
+    saveProgress();
+    closeTileMenu();
+    held.clear();
+    selectedWorld = id;
+    map = structuredClone(worlds[id]);
+    rememberWorld();
+    undo = [];
+    redo = [];
+    hover = null;
+    $("journal").replaceChildren();
+    if (edit) {
+      const start = World.findStart(map);
+      editFloor = start.z;
+      placeEditor(start.x, start.y);
+      syncEditor();
+      setStatus("");
+    } else {
+      announcePlay(resumePlay());
+    }
+    canvas.focus({ preventScroll: true });
+    needsRefresh = true;
+  }
+
+  function labelUpdate() {
+    const floor = currentFloor();
+    $("region").textContent = map.name;
+    document.title = `Arda · ${map.name}`;
+    $("floor-name").textContent = floor.name;
+    $("floor-code").textContent = `Z ${floor.z}`;
+    const pos = edit ? (hover ?? editorCenter) : player;
+    $("coords").textContent = `${Math.round(pos.x)}, ${Math.round(pos.y)}`;
+  }
+
+  function drawMinimap() {
+    const floor = currentFloor();
+    const scale = Math.max(1, Math.min(Math.floor(minimap.width / map.width), Math.floor(minimap.height / map.height)));
+    const ox = Math.floor((minimap.width - map.width * scale) / 2);
+    const oy = Math.floor((minimap.height - map.height * scale) / 2);
+    mini.fillStyle = "#151915";
+    mini.fillRect(0, 0, minimap.width, minimap.height);
+    for (let y = 0; y < map.height; y++) {
+      for (let x = 0; x < map.width; x++) {
+        const ground = floor.ground[World.index(map, x, y)];
+        const object = floor.objects[World.key(x, y)];
+        mini.fillStyle = Art.mapColors[object] ?? Art.mapColors[ground];
+        mini.fillRect(ox + x * scale, oy + y * scale, scale, scale);
+      }
+    }
+    for (const [key, marker] of Object.entries(floor.markers)) {
+      if (marker.type !== "link") continue;
+      const [x, y] = key.split(",").map(Number);
+      mini.fillStyle = "#e6ca80";
+      mini.fillRect(ox + x * scale, oy + y * scale, scale, scale);
+    }
+    const pos = edit ? editorCenter : player;
+    const x = ox + Math.round(pos.x) * scale;
+    const y = oy + Math.round(pos.y) * scale;
+    mini.fillStyle = "#1b1c17";
+    mini.fillRect(x - 1, y - 1, scale + 2, scale + 2);
+    mini.fillStyle = "#fff2c1";
+    mini.fillRect(x, y, scale, scale);
+    return { scale, ox, oy };
+  }
+
+  function thumbnail(paint, resolution = 32) {
+    const image = document.createElement("canvas");
+    image.width = image.height = resolution;
+    image.setAttribute("aria-hidden", "true");
+    const context = image.getContext("2d");
+    if (resolution !== 32) context.scale(resolution / 32, resolution / 32);
+    paint(context);
+    return image;
+  }
+
+  function updatePlayPanel() {
+    const goal = player.level * 18;
+    $("level").textContent = `Level ${player.level}`;
+    $("health-value").textContent = `${player.hp} / ${player.maxHp}`;
+    $("health-fill").style.width = `${player.hp / player.maxHp * 100}%`;
+    $("xp-value").textContent = `${player.xp} / ${goal}`;
+    $("xp-fill").style.width = `${player.xp / goal * 100}%`;
+    $("skill").textContent = player.sword.level;
+    $("shield-skill").textContent = player.shielding.level;
+    for (const [id, skill] of [["sword-progress", player.sword], ["shield-progress", player.shielding]]) {
+      $(id).max = skill.goal;
+      $(id).value = skill.tries;
+    }
+    for (const [id, key] of [["stances", "stance"], ["pursuit", "pursuit"]]) {
+      for (const button of $(id).children) {
+        button.setAttribute("aria-pressed", String(button.dataset[key] === player[key]));
+      }
+    }
+    if (inventoryDirty) updateInventory();
+
+    const list = $("battle-list");
+    list.replaceChildren();
+    const nearby = entities.filter(entity => creatureNames[entity.type] && entity.hp > 0 && entity.z === player.z && distance(entity, player) <= 7);
+    for (const entity of nearby) {
+      const button = document.createElement("button");
+      button.setAttribute("aria-pressed", String(entity === target));
+      const name = document.createElement("span");
+      const hp = document.createElement("span");
+      name.textContent = creatureNames[entity.type];
+      hp.textContent = `${entity.hp}/${entity.maxHp}`;
+      button.append(name, hp);
+      button.addEventListener("click", () => selectTarget(entity));
+      list.append(button);
+    }
+    if (!nearby.length) {
+      const message = document.createElement("p");
+      message.textContent = "No creatures nearby";
+      list.append(message);
+    }
+  }
+
+  function inventoryChanged() {
+    inventoryDirty = needsRefresh = true;
+  }
+
+  function equipItem(id) {
+    if (!Equipment.equip(player.kit, id)) return;
+    journal(`You equip ${Equipment.items[id].name}.`);
+    inventoryChanged();
+  }
+
+  function stowItem(slot) {
+    const id = player.kit.worn[slot];
+    if (!Equipment.stow(player.kit, slot)) return;
+    journal(`You put ${Equipment.items[id].name} in your backpack.`);
+    inventoryChanged();
+  }
+
+  function toggleBackpack() {
+    const panel = $("backpack-panel");
+    panel.hidden = !panel.hidden;
+    $("equipment-slots").querySelector('[data-slot="pack"]').setAttribute("aria-expanded", String(!panel.hidden));
+  }
+
+  function makeItemButton(id, origin, slot, count = 1) {
+    const button = document.createElement("button");
+    button.className = "slot";
+    button.type = "button";
+    button.dataset.item = id;
+    const description = Equipment.description(id);
+    button.title = description;
+    button.setAttribute("aria-label", description);
+    button.append(thumbnail(context => Art.icon(context, id)));
+    if (count > 1) {
+      const badge = document.createElement("small");
+      badge.textContent = count;
+      button.append(badge);
+      button.setAttribute("aria-label", `${description} × ${count}`);
+    }
+    button.addEventListener("contextmenu", event => {
+      event.preventDefault();
+      journal(description);
+    });
+
+    if (id === "pack") {
+      button.setAttribute("aria-label", "Toggle backpack");
+      button.setAttribute("aria-controls", "backpack-panel");
+      button.setAttribute("aria-expanded", String(!$("backpack-panel").hidden));
+      button.addEventListener("click", toggleBackpack);
+    } else if (id === "herb") {
+      button.setAttribute("aria-label", "Use healing herb");
+      button.addEventListener("click", heal);
+    } else if (Equipment.items[id].slot) {
+      button.setAttribute("aria-label", `${origin === "bag" ? "Equip" : "Unequip"} ${Equipment.items[id].name}`);
+      button.addEventListener("click", () => origin === "bag" ? equipItem(id) : stowItem(slot));
+      button.draggable = true;
+      button.addEventListener("dragstart", event => {
+        draggedItem = { id, origin, slot };
+        event.dataTransfer.setData("text/plain", id);
+        event.dataTransfer.effectAllowed = "move";
+      });
+      button.addEventListener("dragend", clearInventoryDrag);
+    } else {
+      button.addEventListener("click", () => journal(description));
+    }
+    return button;
+  }
+
+  function clearInventoryDrag() {
+    draggedItem = null;
+    document.querySelector(".drop-ready")?.classList.remove("drop-ready");
+  }
+
+  function inventoryDrop(event, target) {
+    if (!draggedItem) return;
+    const { id, origin, slot } = draggedItem;
+    const destination = target.dataset.slot;
+    if (destination ? origin !== "bag" || Equipment.items[id].slot !== destination : origin !== "worn") return;
+    event.preventDefault();
+    if (event.type === "dragover") {
+      event.dataTransfer.dropEffect = "move";
+      target.classList.add("drop-ready");
+      return;
+    }
+    clearInventoryDrag();
+    if (destination) equipItem(id);
+    else stowItem(slot);
+  }
+
+  function updateInventory() {
+    const { bag, worn } = player.kit;
+    const equipped = $("equipment-slots");
+    const backpack = $("slots");
+    const focused = document.activeElement.dataset.item;
+    const gear = Equipment.stats(player.kit);
+    $("gear-attack").textContent = gear.attack;
+    $("gear-defense").textContent = gear.defense;
+    $("gear-armor").textContent = gear.armor;
+    const coins = bag.coin ?? 0;
+    $("coins").textContent = `${coins} ${coins === 1 ? "coin" : "coins"}`;
+
+    equipped.replaceChildren();
+    for (const [slot, label] of Object.entries(Equipment.slots)) {
+      const id = worn[slot];
+      const element = id ? makeItemButton(id, "worn", slot) : document.createElement("div");
+      element.classList.add("slot", "equipment-slot");
+      element.dataset.slot = slot;
+      if (!id) {
+        element.classList.add("empty");
+        element.setAttribute("aria-label", `${label} slot, empty`);
+        element.title = `${label} slot`;
+      }
+      const caption = document.createElement("span");
+      caption.textContent = label;
+      caption.setAttribute("aria-hidden", "true");
+      element.append(caption);
+      equipped.append(element);
+    }
+
+    backpack.replaceChildren();
+    for (const [id, count] of Object.entries(bag)) backpack.append(makeItemButton(id, "bag", null, count));
+    while (backpack.childElementCount < 4) {
+      const empty = document.createElement("div");
+      empty.className = "slot empty";
+      empty.setAttribute("aria-hidden", "true");
+      backpack.append(empty);
+    }
+    if (focused) document.querySelector(`[data-item="${focused}"]`)?.focus({ preventScroll: true });
+    inventoryDirty = false;
+  }
+
+  function updateSidebar() {
+    labelUpdate();
+    drawMinimap();
+    if (!edit) {
+      updatePlayPanel();
+      updateQuest();
+    }
+    needsRefresh = false;
+  }
+
+  function resize() {
+    const box = canvas.getBoundingClientRect();
+    const scale = box.width < 540 ? 1 : 1.25;
+    canvas.width = Math.max(1, Math.round(box.width / scale));
+    canvas.height = Math.max(1, Math.round(box.height / scale));
+    c.imageSmoothingEnabled = false;
+  }
+
+  function displayPosition(actor, now) {
+    if (!actor.motion || now >= actor.motion.end) return { ...actor, step: 0 };
+    const { from, begin, end, phase } = actor.motion;
+    const t = (now - begin) / (end - begin);
+    return { ...actor, x: from.x + (actor.x - from.x) * t, y: from.y + (actor.y - from.y) * t, step: phase };
+  }
+
+  function moveActor(actor, x, y, now, duration) {
+    const phase = actor.walkPhase === 1 ? 2 : 1;
+    actor.walkPhase = phase;
+    actor.motion = { from: { x: actor.x, y: actor.y }, begin: now, end: now + duration, phase };
+    actor.face = OpenTibia.directionFromStepDelta(x - actor.x, y - actor.y, actor.face);
+    actor.x = x;
+    actor.y = y;
+  }
+
+  function render(now) {
+    Art.animate(now);
+    const floor = currentFloor();
+    const center = edit ? editorCenter : displayPosition(player, now);
+    view.x = Math.round((center.x + .5) * tile - canvas.width / 2);
+    view.y = Math.round((center.y + .5) * tile - canvas.height / 2);
+    c.fillStyle = "#101411";
+    c.fillRect(0, 0, canvas.width, canvas.height);
+
+    const left = Math.max(0, Math.floor(view.x / tile) - 1);
+    const top = Math.max(0, Math.floor(view.y / tile) - 1);
+    const right = Math.min(map.width - 1, Math.ceil((view.x + canvas.width) / tile) + 1);
+    const bottom = Math.min(map.height - 1, Math.ceil((view.y + canvas.height) / tile) + 2);
+    const draws = [];
+    const px = x => Math.round(x * tile - view.x);
+    const py = y => Math.round(y * tile - view.y);
+
+    for (let y = top; y <= bottom; y++) {
+      for (let x = left; x <= right; x++) {
+        const type = floor.ground[World.index(map, x, y)];
+        Art.tile(c, type, px(x), py(y), x, y);
+        if (type === "path" || type === "water") {
+          const neighbors = [[x, y - 1], [x + 1, y], [x, y + 1], [x - 1, y]];
+          neighbors.forEach(([nx, ny], side) => {
+            if (World.inside(map, nx, ny) && ["grass", "meadow"].includes(floor.ground[World.index(map, nx, ny)])) {
+              Art.edge(c, px(x), py(y), side);
+            }
+          });
+        }
+        const key = World.key(x, y);
+        const object = floor.objects[key];
+        const marker = floor.markers[key];
+        if (object) draws.push({ y, depth: 0, draw: () => Art.object(c, object, px(x), py(y), x, y) });
+        if (marker?.type === "link" && (edit || !["smial", "door"].includes(object))) Art.icon(c, "link", px(x), py(y));
+        if (marker?.type === "notice") draws.push({ y, depth: 0, draw: () => Art.signpost(c, px(x), py(y)) });
+        if (marker?.type === "ledger" && (edit || !hasLedger)) Art.icon(c, "ledger", px(x), py(y));
+        if (edit && marker) {
+          if (marker.type === "start") Art.icon(c, "start", px(x), py(y));
+          else if (!["link", "notice", "ledger"].includes(marker.type)) {
+            draws.push({ y, depth: 1, draw: () => Art.actor(c, marker.type, px(x), py(y)) });
+          }
+        }
+      }
+    }
+
+    if (!edit) {
+      for (const pile of loot) {
+        if (pile.z === player.z) Art.icon(c, "coin", px(pile.x), py(pile.y));
+      }
+      const active = [...entities.filter(entity => entity.z === player.z && entity.hp > 0), player];
+      for (const entity of active) {
+        const pos = displayPosition(entity, now);
+        if (pos.x < left || pos.x > right || pos.y < top || pos.y > bottom) continue;
+        draws.push({
+          y: pos.y, depth: 1, draw: () => {
+            const x = px(pos.x);
+            const y = py(pos.y);
+            if (entity === target) {
+              c.lineWidth = 1;
+              c.strokeStyle = "#db7958";
+              c.strokeRect(x + 1.5, y + 1.5, 29, 29);
+            }
+            Art.actor(c, entity.type ?? "player", x, y, entity.face, pos.step);
+            const friendly = entity !== player && !creatureNames[entity.type];
+            if (entity.type === "miller" || entity.type === "gardener") {
+              c.font = "bold 10px system-ui";
+              c.textAlign = "center";
+              c.lineWidth = 2;
+              c.strokeStyle = "#151710";
+              c.fillStyle = "#e8ddae";
+              c.strokeText(World.markers[entity.type], x + 14, y - 10);
+              c.fillText(World.markers[entity.type], x + 14, y - 10);
+            }
+            if (entity === player || friendly || entity === target || entity.hp < entity.maxHp) {
+              c.fillStyle = "#24231c";
+              c.fillRect(x + 6, y - 6, 20, 3);
+              c.fillStyle = entity === player || friendly ? "#a5bd73" : "#bd644d";
+              c.fillRect(x + 7, y - 5, Math.ceil(entity.hp / entity.maxHp * 18), 1);
+            }
+          }
+        });
+      }
+    }
+    draws.sort((a, b) => a.y - b.y || a.depth - b.depth);
+    for (const entry of draws) entry.draw();
+    if (floor.z < 0 && !edit) {
+      const light = c.createRadialGradient(canvas.width / 2, canvas.height / 2, tile * 2, canvas.width / 2, canvas.height / 2, tile * 10);
+      light.addColorStop(0, "rgba(25,22,18,0)");
+      light.addColorStop(1, "rgba(15,15,17,.78)");
+      c.fillStyle = light;
+      c.fillRect(0, 0, canvas.width, canvas.height);
+    }
+    if (combatText.length) combatText = combatText.filter(label => now - label.start < 880);
+    if (!edit) {
+      c.font = "bold 12px system-ui";
+      c.textAlign = "center";
+      c.lineWidth = 2;
+      for (const label of combatText) {
+        if (label.z !== floor.z) continue;
+        const x = px(label.x) + tile / 2;
+        const y = py(label.y) - 10 - Math.floor((now - label.start) / 45);
+        c.strokeStyle = "#171714";
+        c.fillStyle = label.color;
+        c.strokeText(label.text, x, y);
+        c.fillText(label.text, x, y);
+      }
+    }
+    if (edit) {
+      c.strokeStyle = "rgba(25,26,18,.38)";
+      c.beginPath();
+      for (let x = left; x <= right + 1; x++) {
+        c.moveTo(px(x) + .5, py(top));
+        c.lineTo(px(x) + .5, py(bottom + 1));
+      }
+      for (let y = top; y <= bottom + 1; y++) {
+        c.moveTo(px(left), py(y) + .5);
+        c.lineTo(px(right + 1), py(y) + .5);
+      }
+      c.stroke();
+    }
+    if (hover && World.inside(map, hover.x, hover.y)) {
+      c.strokeStyle = edit ? "#f6d188" : "rgba(234,222,177,.5)";
+      c.strokeRect(px(hover.x) + .5, py(hover.y) + .5, 31, 31);
+    }
+  }
+
+  function adjacentRoute(goal, floor, occupied, forCombat = false) {
+    let best = [];
+    for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) {
+      if (dx === 0 && dy === 0) continue;
+      const x = goal.x + dx;
+      const y = goal.y + dy;
+      if (floor.markers[World.key(x, y)]?.type === "link" ||
+          (forCombat && !World.canStep(map, floor, x, y, goal.x, goal.y, () => false))) continue;
+      const route = World.route(map, floor, player, { x, y }, occupied);
+      if (route.length && (!best.length || route.length < best.length)) best = route;
+    }
+    return best;
+  }
+
+  function walkTo(goal, nearby = false, interaction = null) {
+    const floor = currentFloor();
+    const occupied = (x, y) => Boolean(here(x, y));
+    pendingInteraction = null;
+    if (nearby && distance(player, goal) <= 1) {
+      path = [];
+      interaction?.();
+      return;
+    }
+    path = nearby ? adjacentRoute(goal, floor, occupied) : World.route(map, floor, player, goal, occupied);
+    if (path.length) pendingInteraction = interaction;
+  }
+
+  function stepPlayer(dx, dy, now) {
+    const x = player.x + dx;
+    const y = player.y + dy;
+    if (!World.canStep(map, currentFloor(), player.x, player.y, x, y, (nx, ny) => Boolean(here(nx, ny)))) return false;
+    const interval = OpenTibia.WALK_DURATION_MS * (dx && dy ? 1.5 : 1);
+    moveActor(player, x, y, now, interval - 15);
+    nextMove = now + interval;
+    needsRefresh = true;
+    return true;
+  }
+
+  function updateQuest() {
+    const status = $("quest-status");
+    status.hidden = quest === "available";
+    if (quest === "available") return;
+    const shire = map.adventure === "shire";
+    const name = shire ? "The Mill Ledger" : "Rats in the Cellar";
+    let objective = "Complete";
+    if (quest === "active") {
+      if (ratsDefeated < 2) objective = `Clear the rats (${ratsDefeated}/2)`;
+      else if (shire && !hasLedger) objective = "Recover the ledger at the back of the storehouse";
+      else objective = shire ? "Return to the miller" : "Return to the innkeeper";
+    }
+    status.textContent = `${name} · ${objective}`;
+  }
+
+  function talk() {
+    if (quest === "complete") {
+      journal("Innkeeper: You've earned your rest, traveller.");
+    } else if (ratsDefeated >= 2) {
+      quest = "complete";
+      Equipment.add(player.kit, "coin", 12);
+      Equipment.add(player.kit, "herb", 2);
+      Equipment.add(player.kit, "broadsword");
+      journal("Innkeeper: The cellar's quiet again. Here are 12 coins, two healing herbs and a Bree broadsword.");
+      inventoryChanged();
+    } else {
+      quest = "active";
+      journal(`Innkeeper: Clear the rats beneath the inn, then come back to me. (${ratsDefeated}/2)`);
+      journal("The cellar stairs are beside the front door.");
+      needsRefresh = true;
+    }
+  }
+
+  function talkToMiller() {
+    if (quest === "complete") {
+      journal("Miller: The mill’s running again. Thank you for fetching the ledger.");
+      return;
+    }
+    if (hasLedger) {
+      quest = "complete";
+      Equipment.add(player.kit, "coin", 12);
+      Equipment.add(player.kit, "herb", 2);
+      Equipment.add(player.kit, "shireRing");
+      journal("Miller: My ledger! Take 12 coins, two healing herbs, and this brass ring.");
+      inventoryChanged();
+      return;
+    }
+    quest = "active";
+    needsRefresh = true;
+    if (ratsDefeated >= 2) {
+      journal("Miller: The ledger’s beside the chest at the back of the storehouse.");
+    } else {
+      journal(`Miller: Rats got into the flour. Clear them out and bring back my ledger. (${ratsDefeated}/2)`);
+      journal("The mill door leads down to the storehouse.");
+    }
+  }
+
+  function takeLedger() {
+    if (hasLedger) return false;
+    if (quest !== "active") {
+      journal("It’s the mill’s ledger. Ask the miller about it.");
+    } else if (ratsDefeated < 2) {
+      journal("Clear the rats before you search the storehouse.");
+    } else {
+      hasLedger = true;
+      needsRefresh = true;
+      journal("You recover the mill ledger. Take it back to the miller.");
+    }
+    return true;
+  }
+
+  function useAt(x, y) {
+    const floor = currentFloor();
+    const key = World.key(x, y);
+    const marker = floor.markers[key];
+    if (marker?.type === "link") {
+      const destination = World.floorAt(map, marker.z);
+      if (!destination || !World.passable(map, destination, marker.x, marker.y) || here(marker.x, marker.y, marker.z)) {
+        journal("The passage is blocked.");
+        return true;
+      }
+      Object.assign(player, { x: marker.x, y: marker.y, z: marker.z, motion: null });
+      path = [];
+      target = null;
+      journal(`Entered ${destination.name}.`);
+      needsRefresh = true;
+      return true;
+    }
+    const pile = loot.find(item => item.x === x && item.y === y && item.z === player.z);
+    if (pile) {
+      Equipment.add(player.kit, "coin", pile.coins);
+      for (const id of pile.items) Equipment.add(player.kit, id);
+      loot = loot.filter(item => item !== pile);
+      const coins = `${pile.coins} ${pile.coins === 1 ? "coin" : "coins"}`;
+      const extra = pile.items.length ? ` and ${pile.items.map(id => Equipment.items[id].name).join(", ")}` : "";
+      journal(`Picked up ${coins}${extra}.`);
+      inventoryChanged();
+      return true;
+    }
+    if (marker?.type === "keeper") {
+      talk();
+      return true;
+    }
+    if (marker?.type === "miller") {
+      talkToMiller();
+      return true;
+    }
+    if (marker?.type === "gardener") {
+      journal("Sam Gamgee: Bag End’s the green door up the lane. You’ll find the mill beside The Water, east of here.");
+      return true;
+    }
+    if (marker?.type === "ledger") return takeLedger();
+    if (marker?.type === "notice") {
+      journal(marker.text);
+      return true;
+    }
+    if (floor.objects[key] === "sign") {
+      journal(map.name === "Bree" ? "The Prancing Pony · Rooms and supper." : map.name);
+      return true;
+    }
+    return false;
+  }
+
+  function interact() {
+    path = [];
+    pendingInteraction = null;
+    if (useAt(player.x, player.y)) return;
+    const offsets = [[0, -1], [1, 0], [0, 1], [-1, 0], [1, -1], [1, 1], [-1, 1], [-1, -1]];
+    for (const [dx, dy] of offsets) if (useAt(player.x + dx, player.y + dy)) return;
+    journal("Move beside a person, passage, or item to interact.");
+  }
+
+  function clickWorld(pos) {
+    const floor = currentFloor();
+    const entity = here(pos.x, pos.y);
+    const marker = floor.markers[World.key(pos.x, pos.y)];
+    if (entity && creatureNames[entity.type]) {
+      selectTarget(entity);
+      return;
+    }
+    if (marker?.type === "link") {
+      if (distance(player, pos) === 0) useAt(pos.x, pos.y);
+      else walkTo(pos);
+      return;
+    }
+    if ((markerActions[marker?.type] && !(marker.type === "ledger" && hasLedger)) || loot.some(pile => pile.z === player.z && pile.x === pos.x && pile.y === pos.y) || floor.objects[World.key(pos.x, pos.y)] === "sign") {
+      walkTo(pos, true, () => useAt(pos.x, pos.y));
+      return;
+    }
+    walkTo(pos);
+  }
+
+  const tileMenu = $("tile-menu");
+
+  function closeTileMenu() {
+    tileMenu.hidden = true;
+  }
+
+  function showTileMenu(event) {
+    event.preventDefault();
+    if (edit) return;
+    const pos = pointerPos(event);
+    if (!World.inside(map, pos.x, pos.y)) return;
+    const floor = currentFloor();
+    const key = World.key(pos.x, pos.y);
+    const entity = here(pos.x, pos.y);
+    const marker = floor.markers[key];
+    const object = floor.objects[key];
+    const pile = loot.find(item => item.x === pos.x && item.y === pos.y && item.z === player.z);
+    const markerName = marker?.type === "ledger" && hasLedger ? null : World.markers[marker?.type];
+    const name = (entity && creatureNames[entity.type]) || (pile && "Loot") || markerName ||
+      World.objects[object] || World.ground[floor.ground[World.index(map, pos.x, pos.y)]];
+    const actions = [["Look", () => journal(`You see: ${name}.`)]];
+    if (World.passable(map, floor, pos.x, pos.y) && !entity) actions.push(["Walk here", () => walkTo(pos)]);
+    if (entity && creatureNames[entity.type]) {
+      actions.push([target === entity ? "Stop attack" : "Attack", () => selectTarget(entity)]);
+    } else {
+      const action = pile ? "Take" : marker?.type === "link" || object === "sign" ? "Use" :
+        markerName ? markerActions[marker?.type] : null;
+      if (action) actions.push([action, () => walkTo(pos, true, () => useAt(pos.x, pos.y))]);
+    }
+    tileMenu.replaceChildren();
+    for (const [label, action] of actions) {
+      const item = document.createElement("button");
+      item.textContent = label;
+      item.addEventListener("click", () => {
+        closeTileMenu();
+        action();
+        canvas.focus({ preventScroll: true });
+      });
+      tileMenu.append(item);
+    }
+    const box = tileMenu.parentElement.getBoundingClientRect();
+    tileMenu.hidden = false;
+    tileMenu.style.left = `${Math.max(0, Math.min(event.clientX - box.left, box.width - tileMenu.offsetWidth))}px`;
+    tileMenu.style.top = `${Math.max(0, Math.min(event.clientY - box.top, box.height - tileMenu.offsetHeight))}px`;
+    tileMenu.firstElementChild.focus({ preventScroll: true });
+  }
+
+  function selectTarget(entity) {
+    target = entity === target ? null : entity;
+    path = [];
+    pendingInteraction = null;
+    nextChase = 0;
+    needsRefresh = true;
+  }
+
+  function attackKey() {
+    if (target) return;
+    const nearby = entities
+      .filter(entity => creatureNames[entity.type] && entity.hp > 0 && entity.z === player.z && distance(entity, player) <= 7)
+      .sort((a, b) => distance(player, a) - distance(player, b));
+    if (nearby[0]) selectTarget(nearby[0]);
+    else journal("There is nothing nearby to attack.");
+  }
+
+  function showCombatText(actor, text, color, now) {
+    combatText.push({ x: actor.x, y: actor.y, z: actor.z, text, color, start: now });
+  }
+
+  function canStrike(actor, defender) {
+    return distance(actor, defender) <= 1 &&
+      World.canStep(map, currentFloor(), actor.x, actor.y, defender.x, defender.y, () => false);
+  }
+
+  function hit(now) {
+    if (!target || now < nextAttack || !canStrike(player, target)) return;
+    nextAttack = now + Combat.swingInterval;
+    player.face = OpenTibia.directionFromStepDelta(target.x - player.x, target.y - player.y, player.face);
+    const damage = Math.min(target.hp, Combat.attack(player));
+    if (player.kit.worn.weapon && damage > 0 && Combat.train(player.sword)) {
+      journal(`You advanced to sword fighting level ${player.sword.level}.`);
+    }
+    const name = creatureNames[target.type];
+    target.hp -= damage;
+    showCombatText(target, damage || "Miss", damage ? "#ff8e70" : "#f3d9a7", now);
+    journal(damage ? `You hit the ${name.toLowerCase()} for ${damage}.` : `You miss the ${name.toLowerCase()}.`);
+    if (target.hp === 0) {
+      if (target.type === "rat") ratsDefeated++;
+      const xp = target.type === "rat" ? 9 : 14;
+      const item = target.type === "wolf" ? (Combat.roll(0, 1) ? "pendant" : "ring") : null;
+      const pile = loot.find(entry => entry.x === target.x && entry.y === target.y && entry.z === target.z);
+      if (pile) {
+        pile.coins += target.type === "rat" ? 1 : 3;
+        if (item) pile.items.push(item);
+      } else {
+        loot.push({ x: target.x, y: target.y, z: target.z, coins: target.type === "rat" ? 1 : 3, items: item ? [item] : [] });
+      }
+      journal(`${name} defeated. You gain ${xp} experience.`);
+      player.xp += xp;
+      if (player.xp >= player.level * 18) {
+        player.xp -= player.level * 18;
+        player.level++;
+        player.maxHp += 5;
+        player.hp = player.maxHp;
+        journal(`You reached level ${player.level}.`);
+      }
+      target = null;
+    }
+    needsRefresh = true;
+  }
+
+  function heal() {
+    if (player.hp === player.maxHp) return journal("You are already at full health.");
+    if (!player.kit.bag.herb) return journal("Your backpack is out of healing herbs.");
+    const restored = Math.min(Equipment.items.herb.healing, player.maxHp - player.hp);
+    player.hp += restored;
+    Equipment.add(player.kit, "herb", -1);
+    showCombatText(player, `+${restored}`, "#a9da83", performance.now());
+    journal(`You use a healing herb and recover ${restored} health.`);
+    inventoryChanged();
+  }
+
+  function enemies(now) {
+    const floor = currentFloor();
+    for (const entity of entities) {
+      if (!creatureNames[entity.type] || entity.z !== player.z || entity.hp <= 0) continue;
+      const range = distance(player, entity);
+      const inReach = canStrike(entity, player);
+      if (inReach && now >= entity.nextHit) {
+        entity.nextHit = now + Combat.swingInterval;
+        const incoming = Combat.roll(1, entity.type === "rat" ? 7 : 13);
+        const result = Combat.mitigate(player, incoming, now < nextAttack);
+        const damage = Math.min(player.hp, result.damage);
+        player.hp -= damage;
+        const name = creatureNames[entity.type].toLowerCase();
+        if (result.blocked && player.kit.worn.shield && Combat.train(player.shielding)) {
+          journal(`You advanced to shielding level ${player.shielding.level}.`);
+        }
+        showCombatText(player, damage || "Block", damage ? "#ff887b" : "#e3d0a1", now);
+        if (damage) journal(`The ${name} hits you for ${damage}.`);
+        else if (result.blocked) journal(`You block the ${name}'s attack.`);
+        else journal(`Your armor absorbs the ${name}'s attack.`);
+        needsRefresh = true;
+        if (player.hp === 0) {
+          const start = World.findStart(map);
+          Object.assign(player, { ...start, hp: player.maxHp, motion: null });
+          path = [];
+          pendingInteraction = null;
+          target = null;
+          journal("You recover at the starting point.");
+          break;
+        }
+      }
+      if (inReach || now < entity.nextMove) continue;
+      const pursuing = range <= 4 && distance(player, entity.origin) <= 7;
+      const goal = pursuing ? player : entity.origin;
+      const occupied = (x, y) => Boolean(here(x, y));
+      const next = World.route(map, floor, entity, goal, occupied)[0];
+      entity.nextMove = now + 475;
+      if (next && (next.x !== player.x || next.y !== player.y)) {
+        moveActor(entity, next.x, next.y, now, 150);
+        needsRefresh = true;
+      }
+    }
+  }
+
+  function updateGame(now) {
+    if (player.motion && now >= player.motion.end) {
+      player.motion = null;
+      savePending = true;
+      const marker = currentFloor().markers[World.key(player.x, player.y)];
+      if (marker?.type === "link") {
+        pendingInteraction = null;
+        if (useAt(player.x, player.y)) return;
+      }
+    }
+    if (target && distance(player, target) > 8) {
+      target = null;
+      needsRefresh = true;
+    }
+    if (now >= nextMove) {
+      const directions = [...held.values()];
+      const dx = Math.sign(directions.reduce((sum, value) => sum + value[0], 0));
+      const dy = Math.sign(directions.reduce((sum, value) => sum + value[1], 0));
+      if (dx || dy) {
+        path = [];
+        pendingInteraction = null;
+        stepPlayer(dx, dy, now);
+      } else if (path.length) {
+        const next = path.shift();
+        if (!stepPlayer(next.x - player.x, next.y - player.y, now)) {
+          path = [];
+          pendingInteraction = null;
+        }
+      } else if (pendingInteraction) {
+        const run = pendingInteraction;
+        pendingInteraction = null;
+        run();
+      } else if (target && player.pursuit === "chase" && now >= nextChase && !canStrike(player, target)) {
+        nextChase = now + 260;
+        const next = adjacentRoute(target, currentFloor(), (x, y) => Boolean(here(x, y)), true)[0];
+        if (next) stepPlayer(next.x - player.x, next.y - player.y, now);
+      }
+    }
+    hit(now);
+    if (now - lastTick >= 105) {
+      enemies(now);
+      lastTick = now;
+    }
+  }
+
+  function setStatus(message) {
+    $("save-status").textContent = message;
+  }
+
+  function updateHistory() {
+    $("undo").disabled = !undo.length;
+    $("redo").disabled = !redo.length;
+  }
+
+  function syncEditor() {
+    const floors = $("floors");
+    floors.replaceChildren();
+    for (const floor of [...map.floors].sort((a, b) => b.z - a.z)) {
+      const option = document.createElement("option");
+      option.value = floor.z;
+      option.textContent = `${floor.z} · ${floor.name}`;
+      floors.append(option);
+    }
+    if (!World.floorAt(map, editFloor)) editFloor = map.floors[0].z;
+    placeEditor(editorCenter.x, editorCenter.y);
+    floors.value = editFloor;
+    updateHistory();
+    needsRefresh = true;
+  }
+
+  function showPalette() {
+    const palette = $("palette");
+    palette.replaceChildren();
+    const catalog = { ground: World.ground, objects: World.objects, markers: World.markers };
+    const choices = Object.entries(catalog[layer]);
+    if (layer !== "ground") choices.unshift(["erase", "Erase"]);
+    for (const [type, label] of choices) {
+      const button = document.createElement("button");
+      button.setAttribute("aria-pressed", String(type === brushes[layer]));
+      const image = thumbnail(context => Art.preview(context, type, layer), 30);
+      button.append(image, document.createTextNode(label));
+      button.addEventListener("click", () => {
+        brushes[layer] = type;
+        for (const choice of palette.children) choice.setAttribute("aria-pressed", String(choice === button));
+      });
+      palette.append(button);
+    }
+    for (const tab of $("layers").children) tab.setAttribute("aria-pressed", String(tab.dataset.layer === layer));
+    $("editor-tip").textContent = "Paint on the map. Use WASD or click the minimap to pan.";
+  }
+
+  function snapshot() {
+    return { map: structuredClone(map), floor: editFloor };
+  }
+
+  function record(before) {
+    undo.push(before);
+    if (undo.length > 40) undo.shift();
+    redo = [];
+    updateHistory();
+    setStatus("Unsaved world edits");
+    needsRefresh = true;
+  }
+
+  function restore(from, to) {
+    if (!from.length) return;
+    to.push(snapshot());
+    const previous = from.pop();
+    map = previous.map;
+    editFloor = previous.floor;
+    syncEditor();
+    setStatus("Unsaved world edits");
+  }
+
+  function paint(pos) {
+    if (!World.inside(map, pos.x, pos.y)) return;
+    const floor = currentFloor();
+    const brush = brushes[layer];
+    const key = World.key(pos.x, pos.y);
+    if (layer === "ground") {
+      const index = World.index(map, pos.x, pos.y);
+      if (floor.ground[index] === brush) return;
+      floor.ground[index] = brush;
+    } else if (layer === "objects") {
+      const object = brush === "erase" ? undefined : brush;
+      if (floor.objects[key] === object) return;
+      if (object) floor.objects[key] = object;
+      else delete floor.objects[key];
+    } else {
+      if (brush === "erase") {
+        if (!floor.markers[key]) return;
+        delete floor.markers[key];
+      } else if (brush === "link") {
+        const answer = prompt("Destination floor, x, y. Place a return link on that floor if needed.", `${floor.z - 1}, ${pos.x}, ${pos.y}`);
+        if (answer === null) return;
+        const values = answer.split(",").map(value => value.trim());
+        const [z, x, y] = values.map(Number);
+        const destination = World.floorAt(map, z);
+        if (values.length !== 3 || values.some(value => !/^-?\d+$/.test(value)) || !destination || !World.passable(map, destination, x, y) || !World.passable(map, floor, pos.x, pos.y)) {
+          setStatus("Choose walkable source and destination tiles on existing floors.");
+          return;
+        }
+        floor.markers[key] = { type: "link", z, x, y };
+      } else {
+        if (floor.markers[key]?.type === brush && brush !== "notice") return;
+        if (!World.passable(map, floor, pos.x, pos.y)) {
+          setStatus("Place markers on walkable tiles.");
+          return;
+        }
+        if (brush === "start") {
+          for (const entry of map.floors) {
+            for (const [position, marker] of Object.entries(entry.markers)) {
+              if (marker.type === "start") delete entry.markers[position];
+            }
+          }
+        }
+        if (brush === "notice") {
+          const previous = floor.markers[key]?.text ?? "";
+          const text = prompt("Signpost text", previous)?.trim().slice(0, 160);
+          if (!text || text === previous) return;
+          floor.markers[key] = { type: brush, text };
+        } else {
+          floor.markers[key] = { type: brush };
+        }
+      }
+    }
+    gesture.changed = true;
+    needsRefresh = true;
+  }
+
+  function paintLine(from, to) {
+    const dx = to.x - from.x;
+    const dy = to.y - from.y;
+    const steps = Math.max(Math.abs(dx), Math.abs(dy));
+    for (let step = 1; step <= steps; step++) paint({ x: Math.round(from.x + dx * step / steps), y: Math.round(from.y + dy * step / steps) });
+  }
+
+  function finishPaint() {
+    if (!gesture) return;
+    const { before, changed } = gesture;
+    gesture = null;
+    if (changed) record(before);
+  }
+
+  function pointerPos(event) {
+    const box = canvas.getBoundingClientRect();
+    return {
+      x: Math.floor((view.x + (event.clientX - box.left) * canvas.width / box.width) / tile),
+      y: Math.floor((view.y + (event.clientY - box.top) * canvas.height / box.height) / tile)
+    };
+  }
+
+  function switchMode(enable) {
+    if (edit === enable) return;
+    finishPaint();
+    closeTileMenu();
+    held.clear();
+    if (enable) {
+      saveProgress();
+      editFloor = player.z;
+      editorCenter = { x: player.x, y: player.y };
+      syncEditor();
+      showPalette();
+    } else {
+      try {
+        World.validate(map);
+      } catch (error) {
+        setStatus(error.message);
+        return;
+      }
+    }
+    edit = enable;
+    if (!edit) {
+      const state = resumePlay();
+      if (state !== "continued") announcePlay(state);
+    }
+    $("game-saving").hidden = edit;
+    if (edit) $("quest-status").hidden = true;
+    hover = null;
+    $("play").setAttribute("aria-pressed", String(!edit));
+    $("edit").setAttribute("aria-pressed", String(edit));
+    $("play-panel").hidden = edit;
+    $("edit-panel").hidden = !edit;
+    $("controls").hidden = edit;
+    canvas.setAttribute("aria-label", edit ? "World editor. Click to paint. Use WASD or arrow keys to pan." : "World map. Use arrow keys or WASD to move.");
+    canvas.focus({ preventScroll: true });
+    needsRefresh = true;
+  }
+
+  function placeEditor(x, y) {
+    editorCenter.x = Math.max(0, Math.min(map.width - 1, x));
+    editorCenter.y = Math.max(0, Math.min(map.height - 1, y));
+    hover = null;
+    needsRefresh = true;
+  }
+
+  function addFloor() {
+    if (map.floors.length >= 16) return setStatus("This world already has 16 floors.");
+    const suggestion = Math.min(...map.floors.map(floor => floor.z)) - 1;
+    const answer = prompt("Floor number (negative for underground)", String(suggestion));
+    if (answer === null) return;
+    const z = Number(answer);
+    if (!/^-?\d+$/.test(answer.trim()) || Math.abs(z) > 99 || World.floorAt(map, z)) return setStatus("Choose an unused floor number from −99 to 99.");
+    const name = prompt("Floor name", z < 0 ? "Underground" : "Upper floor")?.trim();
+    if (!name) return;
+    const before = snapshot();
+    map.floors.push(World.makeFloor(map, z, name.slice(0, 60), "void"));
+    editFloor = z;
+    record(before);
+    syncEditor();
+  }
+
+  function newWorld() {
+    const name = prompt("Name for the new world", "Untitled world")?.trim();
+    if (!name) return;
+    const size = prompt("World dimensions in tiles, width × height", "50 x 36");
+    if (size === null) return;
+    const match = size.match(/^\s*(\d+)\s*[x×,]\s*(\d+)\s*$/i);
+    const [width, height] = match ? match.slice(1).map(Number) : [];
+    if (![width, height].every(value => Number.isInteger(value) && value >= 8 && value <= 128)) return setStatus("Enter a width and height between 8 and 128 tiles.");
+    const before = snapshot();
+    map = { version: 1, width, height, name: name.slice(0, 60), floors: [] };
+    const floor = World.makeFloor(map, 0, "Surface", "grass");
+    map.floors.push(floor);
+    const x = Math.floor(width / 2);
+    const y = Math.floor(height / 2);
+    floor.markers[World.key(x, y)] = { type: "start" };
+    editFloor = 0;
+    placeEditor(x, y);
+    record(before);
+    syncEditor();
+  }
+
+  $("world-select").addEventListener("change", event => switchWorld(event.target.value));
+  $("save-game").addEventListener("click", () => saveProgress(true));
+  $("export-save").addEventListener("click", exportCharacter);
+  $("import-save").addEventListener("click", () => $("character-file").click());
+  $("character-file").addEventListener("change", importCharacter);
+  window.addEventListener("pagehide", () => saveProgress());
+  document.addEventListener("visibilitychange", () => {
+    if (document.visibilityState === "hidden") saveProgress();
+  });
+
+  $("play").addEventListener("click", () => switchMode(false));
+  $("edit").addEventListener("click", () => switchMode(true));
+  $("floors").addEventListener("change", event => { editFloor = Number(event.target.value); needsRefresh = true; });
+  $("new-floor").addEventListener("click", addFloor);
+  $("new-world").addEventListener("click", newWorld);
+  $("rename").addEventListener("click", () => {
+    const floor = currentFloor();
+    const name = prompt("Floor name", floor.name)?.trim();
+    if (!name || name === floor.name) return;
+    const before = snapshot();
+    floor.name = name.slice(0, 60);
+    record(before);
+    syncEditor();
+  });
+  $("layers").addEventListener("click", event => {
+    if (!event.target.dataset.layer) return;
+    layer = event.target.dataset.layer;
+    showPalette();
+  });
+  $("undo").addEventListener("click", () => restore(undo, redo));
+  $("redo").addEventListener("click", () => restore(redo, undo));
+  $("save").addEventListener("click", () => {
+    try {
+      const saved = World.validate(map);
+      localStorage.setItem(Saves.mapKey, JSON.stringify(saved));
+      worlds.custom = saved;
+      worldRevisions.custom = Saves.revision(saved);
+      selectedWorld = "custom";
+      rememberWorld();
+      syncWorldSelect();
+      setStatus("World saved in this browser as a custom map.");
+    } catch (error) {
+      setStatus(`Save failed. ${error.message}`);
+    }
+  });
+  $("export").addEventListener("click", () => {
+    try {
+      const filename = map.name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || "arda-world";
+      downloadJson(World.validate(map), `${filename}.json`);
+      setStatus("World exported.");
+    } catch (error) {
+      setStatus(error.message);
+    }
+  });
+  $("import").addEventListener("click", () => $("file").click());
+  $("file").addEventListener("change", async event => {
+    const file = event.target.files[0];
+    event.target.value = "";
+    if (!file) return;
+    try {
+      if (file.size > 8_000_000) throw new Error("World files must be smaller than 8 MB.");
+      const imported = World.validate(JSON.parse(await file.text()));
+      if (!edit) return;
+      const before = snapshot();
+      map = imported;
+      const start = World.findStart(map);
+      editFloor = start.z;
+      placeEditor(start.x, start.y);
+      record(before);
+      syncEditor();
+      setStatus("World imported. Save it to keep it in this browser.");
+    } catch (error) {
+      setStatus(`Import failed. ${error.message}`);
+    }
+  });
+
+  canvas.addEventListener("contextmenu", showTileMenu);
+  document.addEventListener("pointerdown", event => {
+    if (!tileMenu.contains(event.target)) closeTileMenu();
+  });
+  canvas.addEventListener("pointerdown", event => {
+    if (event.button !== 0 || gesture) return;
+    canvas.focus({ preventScroll: true });
+    const pos = pointerPos(event);
+    if (!edit) {
+      clickWorld(pos);
+      return;
+    }
+    canvas.setPointerCapture(event.pointerId);
+    gesture = { pointerId: event.pointerId, before: snapshot(), changed: false, last: pos };
+    paint(pos);
+    if (layer === "markers") finishPaint();
+  });
+  canvas.addEventListener("pointermove", event => {
+    hover = pointerPos(event);
+    if (edit && gesture?.pointerId === event.pointerId) {
+      paintLine(gesture.last, hover);
+      gesture.last = hover;
+    }
+    if (edit) labelUpdate();
+  });
+  canvas.addEventListener("pointerleave", () => { hover = null; if (edit) labelUpdate(); });
+  for (const type of ["pointerup", "pointercancel", "lostpointercapture"]) {
+    canvas.addEventListener(type, event => { if (gesture?.pointerId === event.pointerId) finishPaint(); });
+  }
+
+  minimap.addEventListener("click", event => {
+    if (!edit) return;
+    const { scale, ox, oy } = drawMinimap();
+    const box = minimap.getBoundingClientRect();
+    const x = Math.floor(((event.clientX - box.left) * minimap.width / box.width - ox) / scale);
+    const y = Math.floor(((event.clientY - box.top) * minimap.height / box.height - oy) / scale);
+    if (World.inside(map, x, y)) placeEditor(x, y);
+  });
+
+  for (const [id, key] of [["stances", "stance"], ["pursuit", "pursuit"]]) {
+    $(id).addEventListener("click", event => {
+      const choice = event.target.dataset[key];
+      if (!choice) return;
+      player[key] = choice;
+      nextChase = 0;
+      needsRefresh = true;
+    });
+  }
+
+  for (const id of ["equipment-slots", "slots"]) {
+    const container = $(id);
+    for (const type of ["dragover", "drop"]) {
+      container.addEventListener(type, event => {
+        const target = id === "slots" ? container : event.target.closest("[data-slot]");
+        if (target) inventoryDrop(event, target);
+      });
+    }
+    container.addEventListener("dragleave", event => {
+      const target = id === "slots" ? container : event.target.closest("[data-slot]");
+      if (target && !target.contains(event.relatedTarget)) target.classList.remove("drop-ready");
+    });
+  }
+
+  window.addEventListener("keydown", event => {
+    if (event.target.matches("input, select, textarea") || event.altKey) return;
+    const key = event.key.toLowerCase();
+    if (edit && (event.metaKey || event.ctrlKey) && key === "z") {
+      event.preventDefault();
+      if (event.shiftKey) restore(redo, undo);
+      else restore(undo, redo);
+      return;
+    }
+    if (event.metaKey || event.ctrlKey) return;
+    const direction = numpad[event.code] ?? movement[key];
+    if (direction) {
+      event.preventDefault();
+      if (edit) placeEditor(editorCenter.x + direction[0], editorCenter.y + direction[1]);
+      else held.set(event.code, direction);
+      return;
+    }
+    if (edit || event.repeat) return;
+    if (key === "e") interact();
+    if (key === "1") attackKey();
+    if (key === "2") heal();
+    if (key === "escape") {
+      closeTileMenu();
+      target = null;
+      path = [];
+      pendingInteraction = null;
+      needsRefresh = true;
+    }
+  });
+  window.addEventListener("keyup", event => held.delete(event.code));
+  window.addEventListener("blur", () => held.clear());
+  document.addEventListener("visibilitychange", () => held.clear());
+  new ResizeObserver(resize).observe(canvas);
+
+  function frame(now) {
+    if (!edit) {
+      updateGame(now);
+      if (needsRefresh) savePending = true;
+      if (savePending && now >= saveAfter) saveProgress();
+    }
+    if (needsRefresh) updateSidebar();
+    render(now);
+    requestAnimationFrame(frame);
+  }
+
+  syncWorldSelect();
+  const initial = resumePlay();
+  resize();
+  if (loadMessage) journal(loadMessage);
+  announcePlay(initial);
+  Art.ready.then(() => requestAnimationFrame(frame)).catch(() => {
+    journal("The OpenTibia sprite pack could not be loaded.");
+  });
+  if (location.protocol !== "file:" && "serviceWorker" in navigator) {
+    navigator.serviceWorker.register("./sw.js").catch(error => console.warn("Offline cache unavailable", error));
+  }
+})();

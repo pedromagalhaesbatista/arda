@@ -10,9 +10,9 @@ const Art = (() => {
 
   const mapColors = {
     grass: "#566035", meadow: "#586b31", crop: "#7c852b", path: "#b49e76", stone: "#858479", wood: "#80522f",
-    water: "#276b9b", bridge: "#855838", soil: "#704a30", void: "#0d100e",
+    water: "#276b9b", river: "#367782", bridge: "#855838", soil: "#704a30", void: "#0d100e",
     tree: "#364620", pine: "#2f431e", wall: "#a29b8d", sideWall: "#a29b8d",
-    timber: "#8a6747", sideTimber: "#8a6747", roof: "#7e5043", fence: "#92724d", smial: "#b3af64", millWheel: "#694727"
+    timber: "#8a6747", sideTimber: "#8a6747", roof: "#7e5043", fence: "#92724d", smial: "#b3af64", millWheel: "#694727", partyTree: "#39522a", appleTree: "#536535", hedge: "#506132"
   };
 
   function sprite(c, id, x, y) {
@@ -97,7 +97,45 @@ const Art = (() => {
     return image;
   }
 
+  function decoration(c, type, x, y) {
+    if (type === "rug") {
+      c.fillStyle = "#54362d";
+      c.fillRect(x + 1, y + 2, 30, 27);
+      c.fillStyle = "#a67f49";
+      c.fillRect(x + 3, y + 4, 26, 23);
+      c.fillStyle = "#7f4740";
+      c.fillRect(x + 5, y + 6, 22, 19);
+      c.fillStyle = "#bb9156";
+      for (const dx of [9, 16, 23]) {
+        c.fillRect(x + dx - 1, y + 14, 3, 3);
+        c.fillRect(x + dx, y + 13, 1, 5);
+      }
+    } else {
+      c.fillStyle = "#5e4127";
+      c.fillRect(x + 1, y + 3, 2, 25);
+      c.fillRect(x + 29, y + 3, 2, 25);
+      c.fillRect(x + 2, y + 4, 28, 1);
+      const colors = ["#caa456", "#ad5b45", "#71986d", "#c58c53"];
+      colors.forEach((color, i) => {
+        const left = x + 4 + i * 6;
+        c.fillStyle = color;
+        c.fillRect(left, y + 5, 5, 2);
+        c.fillRect(left + 1, y + 7, 3, 2);
+        c.fillRect(left + 2, y + 9, 1, 1);
+      });
+    }
+  }
+
   function object(c, type, x, y, vx = 0, vy = 0) {
+    if (type === "rug" || type === "bunting") return decoration(c, type, x, y);
+    if (type === "partyTree") {
+      c.save();
+      c.translate(x + size * 0.75, y + size);
+      c.scale(1.65, 1.65);
+      draw(c, sprites.objects.partyTree, -size * 0.75, -size);
+      c.restore();
+      return;
+    }
     if (type === "smial" || type === "millWheel") {
       const image = landmark(type);
       c.drawImage(image, x - (image.width - size) / 2, y + size - image.height);
@@ -148,6 +186,7 @@ const Art = (() => {
       return;
     }
     if (type === "notice") return signpost(c, 0, 0);
+    if (type === "rug" || type === "bunting") return decoration(c, type, 0, 0);
     const group = layer === "objects" ? sprites.objects : sprites.actors;
     const thing = group[type];
     if (!thing) return icon(c, type);

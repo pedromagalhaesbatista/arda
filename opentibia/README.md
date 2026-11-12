@@ -8,7 +8,7 @@ Arda uses [OTClient Web](https://github.com/davideluque/otclient-web/tree/435f5a
 
 Melee damage, fighting stance modifiers, and the order of defense and armor rolls follow [The Forgotten Server's player rules](https://github.com/otland/forgottenserver/blob/master/src/player.cpp), [weapon formula](https://github.com/otland/forgottenserver/blob/master/src/weapons.cpp), and [damage mitigation](https://github.com/otland/forgottenserver/blob/master/src/creature.cpp). Equipment values, monster damage, and skill advancement are tuned for the Bree playtest.
 
-The artwork comes from the [OpenTibia Sprite Pack](https://github.com/peonso/opentibia_sprite_pack/tree/ae88e1828671b349e729dd21177dde15ea41e123) by the [OpenTibia community artists](SPRITE-AUTHORS.md), under [CC BY 4.0](LICENSE-SPRITES). Arda selects and repacks the sprites into one atlas and colors the traveller outfit. No assets from the CipSoft client are bundled.
+The artwork comes from the [OpenTibia Sprite Pack](https://github.com/peonso/opentibia_sprite_pack/tree/ae88e1828671b349e729dd21177dde15ea41e123) by the [OpenTibia community artists](SPRITE-AUTHORS.md), under [CC BY 4.0](LICENSE-SPRITES). Arda selects and repacks the sprites into one atlas and colors the traveller outfit and Shire river tiles. No assets from the CipSoft client are bundled.
 
 To regenerate the bundled files, run from the Arda folder with Node 24 or newer. Use a checkout of the sprite pack at the revision linked above.
 

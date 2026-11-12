@@ -56,10 +56,52 @@ const Saves = (() => {
       Array.isArray(pile.items) && pile.items.every(id => id !== "pack" && Object.hasOwn(Equipment.items, id)));
   }
 
-  function read(key, map, entities) {
+  function relocate(value, map, entities) {
+    if (!record(value) || !record(value.creatures) || !Array.isArray(value.loot)) {
+      throw new Error("Saved character data is unreadable.");
+    }
+    const occupied = new Set();
+    const pointKey = (x, y, z) => `${z}:${World.key(x, y)}`;
+    for (const entity of entities) {
+      if (!Object.hasOwn(value.creatures, actorKey(entity))) occupied.add(pointKey(entity.x, entity.y, entity.z));
+    }
+
+    function nearest(point, avoidActors) {
+      if (!record(point) || !integer(point.x, 0, map.width - 1) || !integer(point.y, 0, map.height - 1)) {
+        throw new Error("Saved position is unreadable.");
+      }
+      const floor = World.floorAt(map, point.z);
+      if (!floor) throw new Error("The saved floor is missing.");
+      const open = (x, y) => World.passable(map, floor, x, y) &&
+        (!avoidActors || !occupied.has(pointKey(x, y, point.z)));
+      if (open(point.x, point.y)) return point;
+      let best = null;
+      let distance = Infinity;
+      for (let y = 0; y < map.height; y++) {
+        for (let x = 0; x < map.width; x++) {
+          const steps = Math.abs(point.x - x) + Math.abs(point.y - y);
+          if (steps >= distance || !open(x, y) || floor.markers[World.key(x, y)]?.type === "link") continue;
+          best = { ...point, x, y };
+          distance = steps;
+        }
+      }
+      if (!best) throw new Error("The saved floor has no walkable tile.");
+      return best;
+    }
+
+    const creatures = Object.create(null);
+    for (const [id, point] of Object.entries(value.creatures)) {
+      const moved = nearest(point, point?.hp > 0);
+      creatures[id] = moved;
+      if (moved.hp > 0) occupied.add(pointKey(moved.x, moved.y, moved.z));
+    }
+    return { ...value, creatures, player: nearest(value.player, true), loot: value.loot.map(point => nearest(point, false)) };
+  }
+
+  function read(key, map, entities, adapt = value => value) {
     const raw = localStorage.getItem(key);
     if (raw === null) return { raw, value: null };
-    const value = JSON.parse(raw);
+    const value = adapt(JSON.parse(raw));
     if (!valid(value, map, entities)) throw new Error("Saved character data is unreadable.");
     return { raw, value };
   }
@@ -71,5 +113,5 @@ const Saves = (() => {
     return raw;
   }
 
-  return { mapKey, selectionKey, revision, progressKey, actorKey, valid, read, write };
+  return { mapKey, selectionKey, revision, progressKey, actorKey, valid, relocate, read, write };
 })();

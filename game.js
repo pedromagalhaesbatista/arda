@@ -43,6 +43,7 @@
   let saveBlocked = false;
   let savePending = false;
   let saveAfter = 0;
+  let landmarkFloor = null;
 
   let player;
   let entities = [];
@@ -172,11 +173,16 @@
     }
 
     try {
-      const result = Saves.read(key, map, entities.filter(entity => creatureNames[entity.type]));
+      const hostiles = entities.filter(entity => creatureNames[entity.type]);
+      const result = Saves.read(key, map, hostiles);
       saveRaw = result.raw;
+      let data = result.value;
+      if (!data && selectedWorld === "shire") {
+        const priorKey = Saves.progressKey("shire", Shire.previousRevision);
+        data = Saves.read(priorKey, map, hostiles, value => Saves.relocate(value, map, entities)).value;
+      }
       saveStatus(result.value ? "Saved on this device" : "Autosave on");
-      if (!result.value) return keepPlaytest ? "continued" : "new";
-      const data = result.value;
+      if (!data) return keepPlaytest ? "continued" : "new";
       for (const field of Object.keys(player)) {
         if (Object.hasOwn(data.player, field)) player[field] = data.player[field];
       }
@@ -222,13 +228,15 @@
       const data = JSON.parse(await file.text());
       if (edit || saveKey !== key) return;
       if (data?.format !== "arda-save" || data.version !== 1) throw new Error("Choose an Arda character save.");
-      if (data.revision !== playRevision) throw new Error("Open the matching map before importing this save.");
-      if (!Saves.valid(data.progress, map, entities.filter(entity => creatureNames[entity.type]))) {
+      const previousShire = selectedWorld === "shire" && data.revision === Shire.previousRevision;
+      if (data.revision !== playRevision && !previousShire) throw new Error("Open the matching map before importing this save.");
+      const progress = previousShire ? Saves.relocate(data.progress, map, entities) : data.progress;
+      if (!Saves.valid(progress, map, entities.filter(entity => creatureNames[entity.type]))) {
         throw new Error("The character save is unreadable.");
       }
       const current = localStorage.getItem(key);
       if (current !== null && !confirm("Replace the character and quest progress for this map with the imported save?")) return;
-      Saves.write(key, data.progress, current);
+      Saves.write(key, progress, current);
       playRevision = null;
       announcePlay(resumePlay());
       journal("Character save imported.");
@@ -326,9 +334,9 @@
       }
     }
     for (const [key, marker] of Object.entries(floor.markers)) {
-      if (marker.type !== "link") continue;
+      if (marker.type !== "link" && !(map.adventure === "shire" && floor.z === 0 && marker.type === "notice")) continue;
       const [x, y] = key.split(",").map(Number);
-      mini.fillStyle = "#e6ca80";
+      mini.fillStyle = marker.type === "link" ? "#e6ca80" : "#d0ad72";
       mini.fillRect(ox + x * scale, oy + y * scale, scale, scale);
     }
     const pos = edit ? editorCenter : player;
@@ -339,6 +347,38 @@
     mini.fillStyle = "#fff2c1";
     mini.fillRect(x, y, scale, scale);
     return { scale, ox, oy };
+  }
+
+  function updateLandmarks() {
+    const floor = currentFloor();
+    const panel = $("landmarks");
+    panel.hidden = edit || map.adventure !== "shire" || floor.z !== 0;
+    if (panel.hidden) {
+      landmarkFloor = null;
+      return;
+    }
+    if (landmarkFloor === floor) return;
+    landmarkFloor = floor;
+    const list = $("landmark-list");
+    list.replaceChildren();
+    for (const [key, marker] of Object.entries(floor.markers)) {
+      if (marker.type !== "notice") continue;
+      const [x, y] = key.split(",").map(Number);
+      const name = marker.text.split(" · ", 1)[0];
+      const button = document.createElement("button");
+      button.type = "button";
+      button.textContent = name;
+      button.title = `Walk to ${name}`;
+      button.addEventListener("click", () => {
+        target = null;
+        walkTo({ x, y });
+        if (path.length || (player.x === x && player.y === y)) journal(marker.text);
+        else journal(`There is no clear path to ${name}.`);
+        needsRefresh = true;
+        canvas.focus({ preventScroll: true });
+      });
+      list.append(button);
+    }
   }
 
   function thumbnail(paint, resolution = 32) {
@@ -525,6 +565,7 @@
   function updateSidebar() {
     labelUpdate();
     drawMinimap();
+    updateLandmarks();
     if (!edit) {
       updatePlayPanel();
       updateQuest();
@@ -577,7 +618,7 @@
       for (let x = left; x <= right; x++) {
         const type = floor.ground[World.index(map, x, y)];
         Art.tile(c, type, px(x), py(y), x, y);
-        if (type === "path" || type === "water") {
+        if (["path", "water", "river"].includes(type)) {
           const neighbors = [[x, y - 1], [x + 1, y], [x, y + 1], [x - 1, y]];
           neighbors.forEach(([nx, ny], side) => {
             if (World.inside(map, nx, ny) && ["grass", "meadow"].includes(floor.ground[World.index(map, nx, ny)])) {
@@ -588,7 +629,8 @@
         const key = World.key(x, y);
         const object = floor.objects[key];
         const marker = floor.markers[key];
-        if (object) draws.push({ y, depth: 0, draw: () => Art.object(c, object, px(x), py(y), x, y) });
+        if (object === "rug") Art.object(c, object, px(x), py(y), x, y);
+        else if (object) draws.push({ y, depth: 0, draw: () => Art.object(c, object, px(x), py(y), x, y) });
         if (marker?.type === "link" && (edit || !["smial", "door"].includes(object))) Art.icon(c, "link", px(x), py(y));
         if (marker?.type === "notice") draws.push({ y, depth: 0, draw: () => Art.signpost(c, px(x), py(y)) });
         if (marker?.type === "ledger" && (edit || !hasLedger)) Art.icon(c, "ledger", px(x), py(y));

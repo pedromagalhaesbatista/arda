@@ -2,7 +2,7 @@
 
 const World = (() => {
   const ground = {
-    grass: "Grass", path: "Dirt path", water: "Water", stone: "Flagstone",
+    grass: "Grass", path: "Dirt path", water: "Water", river: "River water", stone: "Flagstone",
     wood: "Planks", meadow: "Meadow", crop: "Crops", bridge: "Bridge", soil: "Garden soil", void: "Void"
   };
   const objects = {
@@ -10,9 +10,11 @@ const World = (() => {
     rock: "Boulder", wall: "Stone wall", sideWall: "Stone side wall", timber: "Timber wall", sideTimber: "Timber side wall", roof: "Tiled roof", fence: "Fence",
     barrel: "Barrel", lamp: "Lantern", door: "Door", sign: "Sign",
     smial: "Hobbit door", millWheel: "Water wheel", bank: "Grassy bank", table: "Table", bed: "Bed", chest: "Chest",
+    partyTree: "Party tree", appleTree: "Apple tree", hedge: "Hedge", reeds: "Reeds",
+    bench: "Bench", bunting: "Bunting", basket: "Basket", hearth: "Hearth", rug: "Rug",
   };
   const markers = { start: "Player start", link: "Floor link", keeper: "Innkeeper", miller: "Miller", gardener: "Sam Gamgee", ledger: "Mill ledger", notice: "Signpost", rat: "Cellar rat", wolf: "Wolf" };
-  const solid = new Set(["tree", "pine", "rock", "wall", "sideWall", "timber", "sideTimber", "roof", "fence", "barrel", "lamp", "millWheel", "bank", "table", "bed", "chest"]);
+  const solid = new Set(["tree", "pine", "rock", "wall", "sideWall", "timber", "sideTimber", "roof", "fence", "barrel", "lamp", "millWheel", "bank", "table", "bed", "chest", "partyTree", "appleTree", "hedge", "bench", "basket", "hearth"]);
   const key = (x, y) => `${x},${y}`;
   const index = (map, x, y) => y * map.width + x;
   const inside = (map, x, y) => x >= 0 && y >= 0 && x < map.width && y < map.height;
@@ -25,7 +27,7 @@ const World = (() => {
   function passable(map, floor, x, y) {
     if (!inside(map, x, y)) return false;
     const tile = floor.ground[index(map, x, y)];
-    return tile !== "water" && tile !== "void" && !solid.has(floor.objects[key(x, y)]);
+    return tile !== "water" && tile !== "river" && tile !== "void" && !solid.has(floor.objects[key(x, y)]);
   }
 
   function canStep(map, floor, x, y, nx, ny, occupied) {

@@ -15,11 +15,12 @@ function read(file: string): ArrayBuffer {
   return bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength);
 }
 
-const grounds = { grass: 101, path: 129, water: 163, stone: 160, wood: 182, meadow: 110, crop: 122, bridge: 182, soil: 136 };
+const grounds = { grass: 101, path: 129, water: 163, river: 163, stone: 160, wood: 182, meadow: 110, crop: 122, bridge: 182, soil: 136 };
 const objects = {
   tree: 1507, pine: 1565, shrub: 1498, flowers: 1338, rock: 1632, wall: 519,
   roof: 189, fence: 1099, barrel: 1110, lamp: 1178, door: 1021, sign: 1181,
   timber: 588, sideWall: 518, sideTimber: 587, bank: 922, table: 1192, bed: 1199, chest: 1115,
+  partyTree: 1506, appleTree: 1519, hedge: 1480, reeds: 1465, bench: 1190, basket: 1109, hearth: 1121,
 };
 const items = {
   sword: 1689, broadsword: 1694, buckler: 1915, cap: 1943, tunic: 2010,
@@ -65,6 +66,24 @@ for (let offset = 0; offset < outfit.spriteIds.length; offset += parts * 2) {
 }
 outfit.spriteIds = outfitIds;
 outfit.layers = 1;
+
+const riverFrames = new Map<number, number>();
+group.grounds.river.spriteIds = group.grounds.river.spriteIds.map(id => {
+  if (riverFrames.has(id)) return riverFrames.get(id)!;
+  const pixels = decodeSprite(spr, id);
+  if (!pixels) return 0;
+  for (let i = 0; i < pixels.length; i += 4) {
+    if (pixels[i + 3] === 0) continue;
+    const shade = pixels[i + 1] / 255;
+    pixels[i] = Math.round(28 + 42 * shade);
+    pixels[i + 1] = Math.round(65 + 68 * shade);
+    pixels[i + 2] = Math.round(72 + 78 * shade);
+  }
+  const tintedId = spr.spriteCount + recolored.size + 1;
+  recolored.set(tintedId, pixels);
+  riverFrames.set(id, tintedId);
+  return tintedId;
+});
 
 const ids = new Set<number>();
 for (const entries of Object.values(group)) {

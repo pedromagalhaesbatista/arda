@@ -29,6 +29,15 @@ const Equipment = (() => {
     handwraps: { name: "Reinforced handwraps", slot: "weapon", attack: 14, defense: 4, skill: "fist", vocation: "monk" },
     riverPendant: { name: "Riverstone pendant", slot: "amulet", armor: 1, healingPower: 4, vocation: "druid" },
     emberRing: { name: "Ember ring", slot: "ring", armor: 1, spellPower: 3, vocation: "sorcerer" },
+    forestFang: { name: "Old Forest wolf fang" },
+    thornBark: { name: "Thorn bark" },
+    willowHeart: { name: "Willow heartwood" },
+    wardenCoat: { name: "Buckland warden's coat", slot: "body", armor: 5, sprite: "tunic" },
+    thornShield: { name: "Thornwood shield", slot: "shield", defense: 18, vocation: "knight", sprite: "oakShield" },
+    longYewBow: { name: "Old Forest longbow", slot: "weapon", attack: 19, defense: 4, skill: "distance", range: 5, vocation: "paladin", sprite: "yewBow" },
+    briarWraps: { name: "Briarhide wraps", slot: "weapon", attack: 18, defense: 6, skill: "fist", vocation: "monk", sprite: "handwraps" },
+    willowPendant: { name: "Willowheart pendant", slot: "amulet", armor: 2, healingPower: 7, vocation: "druid", sprite: "riverPendant" },
+    amberRing: { name: "Amber focus ring", slot: "ring", armor: 2, spellPower: 6, vocation: "sorcerer", sprite: "emberRing" },
     coin: { name: "Coin" },
   };
 

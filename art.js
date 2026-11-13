@@ -16,6 +16,7 @@ const Art = (() => {
     smialBlue: "#a9ad73", smialRed: "#b1a965", thatch: "#b2904e", thatchChimney: "#b2904e",
     tileChimney: "#7e5043", cottageWindow: "#a47d54", stoneWindow: "#a29b8d",
     millWheel: "#694727", partyTree: "#39522a", appleTree: "#536535", hedge: "#506132",
+    oldWillow: "#46502e", deadwood: "#5b4f35", campfire: "#ca8244",
     heath: "#75735a", marsh: "#5e6543", road: "#b69d73", woodland: "#45562d",
   };
 
@@ -339,7 +340,61 @@ const Art = (() => {
     return /^(ashlar|framed|clay|slate|straw|smialBank|stall|trough|dock)/.test(type);
   }
 
+  const forestProps = new Set(["deadwood", "oldWillow", "campfire"]);
+  const forestTiles = new Map();
+  function forestProp(type) {
+    if (forestTiles.has(type)) return forestTiles.get(type);
+    const image = document.createElement("canvas");
+    image.width = type === "oldWillow" ? 60 : 32;
+    image.height = type === "oldWillow" ? 65 : 32;
+    const c = image.getContext("2d");
+    const rect = (color, x, y, w, h) => { c.fillStyle = color; c.fillRect(x, y, w, h); };
+    if (type === "campfire") {
+      for (const [x, y] of [[7, 19], [13, 23], [20, 22], [24, 17], [11, 16], [19, 14]]) {
+        rect("#413b32", x, y, 6, 5);
+        rect("#80745d", x + 1, y, 4, 2);
+      }
+      rect("#3b291c", 10, 17, 15, 6);
+      rect("#956044", 12, 20, 10, 2);
+      rect("#bd592c", 13, 10, 9, 10);
+      rect("#ef9041", 14, 13, 6, 8);
+      rect("#ffbf59", 16, 9, 4, 10);
+      rect("#ffe198", 16, 15, 3, 5);
+    } else if (type === "deadwood") {
+      rect("#353221", 2, 20, 28, 6);
+      rect("#4d3f2d", 3, 14, 26, 9);
+      rect("#6a5339", 5, 13, 22, 7);
+      rect("#807051", 4, 15, 19, 2);
+      rect("#99815b", 25, 14, 5, 8);
+      rect("#655439", 26, 16, 2, 4);
+      rect("#514f2c", 7, 11, 6, 4);
+      rect("#6e6a37", 13, 12, 8, 2);
+    } else {
+      rect("#372e21", 23, 28, 15, 29);
+      rect("#6b5840", 25, 27, 9, 32);
+      rect("#473c2c", 15, 57, 29, 5);
+      rect("#5b4b32", 10, 60, 20, 3);
+      rect("#554632", 32, 56, 17, 4);
+      for (let y = 2; y < 54; y++) for (let x = 0; x < 60; x++) {
+        const crown = ((x - 30) / 29) ** 2 + ((y - 20) / 19) ** 2;
+        const fringe = y > 21 && y < 52 - Math.abs(x - 30) * .22 && Math.abs(x - 30) > 9 && x % 11 < 5;
+        if (crown > 1 && !fringe) continue;
+        const n = detail(x, y, 1);
+        const colors = ["#313d25", "#3d4a2a", "#4b5931", "#586638", "#6b7440"];
+        const shade = Math.min(4, Math.max(0, 3 - Math.floor(y / 14) + (n % 9 === 0 ? 1 : 0) - (x % 7 > 4 ? 1 : 0)));
+        rect(colors[shade], x, y, 1, 1);
+      }
+    }
+    forestTiles.set(type, image);
+    return image;
+  }
+
   function object(c, type, x, y, vx = 0, vy = 0) {
+    if (forestProps.has(type)) {
+      const image = forestProp(type);
+      c.drawImage(image, x + (size - image.width) / 2, y + size - image.height);
+      return;
+    }
     if (type === "seedCrate") type = "basket";
     if (type === "rug" || type === "bunting") return decoration(c, type, x, y);
     if (type === "partyTree") {
@@ -373,7 +428,66 @@ const Art = (() => {
     c.fillRect(x + 10, y + 14, 9, 1);
   }
 
+  const forestTypes = new Set(["forestWolf", "thornling", "willowGuardian"]);
+  const forestActors = new Map();
+  function forestActor(type, face, step) {
+    const id = `${type}:${face}:${step}`;
+    if (forestActors.has(id)) return forestActors.get(id);
+    const image = document.createElement("canvas");
+    const guardian = type === "willowGuardian";
+    const side = guardian ? 44 : 32;
+    image.width = image.height = side;
+    const c = image.getContext("2d");
+    const rect = (color, x, y, w, h) => { c.fillStyle = color; c.fillRect(x, y, w, h); };
+    if (type === "forestWolf") {
+      draw(c, sprites.actors.wolf, 0, 0, face, 0, step, 1);
+      c.globalCompositeOperation = "source-atop";
+      rect("#38433570", 0, 0, 32, 32);
+    } else {
+      const mid = side / 2;
+      const sway = step === 1 ? -1 : step === 2 ? 1 : 0;
+      const trunk = guardian ? "#685139" : "#55432b";
+      const branch = guardian ? "#897151" : "#746048";
+      rect("#292b20", mid - 11, side - 4, 22, 3);
+      rect(trunk, mid - 7, side - 13 + sway, 5, 11 - sway);
+      rect(trunk, mid + 3, side - 13 - sway, 5, 11 + sway);
+      rect(branch, mid - 9, side - 4 + sway, 8, 2);
+      rect(branch, mid + 2, side - 4 - sway, 9, 2);
+      rect("#393123", mid - 8, 11, 16, side - 20);
+      rect(trunk, mid - 7, 9, 14, side - 21);
+      rect(branch, mid - 5, 12, 3, side - 24);
+      rect("#3f3525", mid + 2, 13, 2, side - 26);
+      for (const sign of [-1, 1]) {
+        const reach = guardian ? 17 : 13;
+        for (let n = 7; n <= reach; n++) {
+          rect(n % 3 ? trunk : branch, mid + n * sign, Math.floor(15 + (n - 7) * .8 + sway * sign), 3, guardian ? 5 : 3);
+        }
+        rect("#3b4b2b", mid + sign * 10 - 3, 6 + sway * sign, 7, 7);
+        rect("#617344", mid + sign * 10 - 2, 6 + sway * sign, 5, 3);
+      }
+      rect("#35432b", mid - 9, 6, 18, 7);
+      rect("#4b6038", mid - 7, 3, 14, 6);
+      rect("#627546", mid - 4, 1, 9, 5);
+      if (face !== OpenTibia.Direction.North) {
+        const color = guardian ? "#edb25f" : "#b6bd63";
+        if (face !== OpenTibia.Direction.East) rect(color, mid - 4, 15, 2, 2);
+        if (face !== OpenTibia.Direction.West) rect(color, mid + 2, 15, 2, 2);
+      }
+      if (guardian) {
+        rect("#46633c", mid - 1, 22, 6, 7);
+        rect("#93a263", mid, 23, 3, 4);
+      }
+    }
+    forestActors.set(id, image);
+    return image;
+  }
+
   function actor(c, type, x, y, face = OpenTibia.Direction.South, step = 0) {
+    if (forestTypes.has(type)) {
+      const image = forestActor(type, face, step);
+      c.drawImage(image, x + (size - image.width) / 2, y + size - image.height);
+      return;
+    }
     draw(c, sprites.actors[Villages.people[type]?.sprite ?? type], x, y, face, 0, step, 1);
   }
 
@@ -387,8 +501,37 @@ const Art = (() => {
   }
 
   function icon(c, id, x = 0, y = 0) {
-    if (sprites.items[id]) {
-      draw(c, sprites.items[id], x, y);
+    if (id === "forestFang" || id === "thornBark" || id === "willowHeart") {
+      const heart = id === "willowHeart";
+      c.fillStyle = "#332c20";
+      c.fillRect(x + 8, y + 23, 17, 3);
+      if (id === "forestFang") {
+        for (let row = 0; row < 15; row++) {
+          const left = 11 + Math.floor(row * .45);
+          c.fillStyle = "#9f8b67";
+          c.fillRect(x + left, y + 9 + row, Math.max(2, 12 - row), 1);
+          c.fillStyle = "#e8d6a7";
+          c.fillRect(x + left + 1, y + 9 + row, Math.max(1, 9 - row), 1);
+        }
+      } else {
+        c.fillStyle = heart ? "#5d4734" : "#6a5437";
+        c.fillRect(x + 8, y + 12, 17, 11);
+        c.fillStyle = heart ? "#a58956" : "#837047";
+        c.fillRect(x + 10, y + 10, 11, 11);
+        c.fillStyle = heart ? "#c3b478" : "#54623a";
+        c.fillRect(x + 14, y + 12, 4, 8);
+        c.fillStyle = heart ? "#e5cc87" : "#776240";
+        c.fillRect(x + 15, y + 13, 2, 4);
+        if (!heart) {
+          c.fillRect(x + 11, y + 6, 2, 6);
+          c.fillRect(x + 22, y + 8, 2, 6);
+        }
+      }
+      return;
+    }
+    const spriteId = Equipment.items[id]?.sprite ?? id;
+    if (sprites.items[spriteId]) {
+      draw(c, sprites.items[spriteId], x, y);
       return;
     }
     c.fillStyle = "#f2cc76";
@@ -413,6 +556,10 @@ const Art = (() => {
     if (architecture.has(type)) return building(c, type, 0, 0, 0, 0);
     if (type === "smialBank") return tile(c, "meadow", 0, 0);
     if (isStructure(type)) return c.drawImage(structure(type, 0), 0, 0);
+    if (forestProps.has(type)) return c.drawImage(forestProp(type), 0, 0, size, size);
+    if (forestTypes.has(type)) {
+      return c.drawImage(forestActor(type, OpenTibia.Direction.South, 0), 0, 0, size, size);
+    }
     if (type === "notice") return signpost(c, 0, 0);
     if (type === "rug" || type === "bunting") return decoration(c, type, 0, 0);
     const group = layer === "objects" ? sprites.objects : sprites.actors;

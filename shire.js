@@ -5,9 +5,10 @@ const Shire = (() => {
   const width = 320;
   const height = 180;
   const regionalRevision = "1f9b74a99de1818e";
+  const villageRevision = "47ab775a471ac234";
   const rebuiltRevision = "456a8a81b0064ba7";
   const referenceRevision = "43820befb457b342";
-  const previousRevisions = [rebuiltRevision, referenceRevision, regionalRevision, "a68195270fd424c9", "b902d48dab786345", "e6258651b64f76aa"];
+  const previousRevisions = [villageRevision, rebuiltRevision, referenceRevision, regionalRevision, "a68195270fd424c9", "b902d48dab786345", "e6258651b64f76aa"];
   const places = [
     ["Duillond", 9, 62, "Ered Luin", "Elven settlement."],
     ["Falathlorn Homesteads", 20, 73, "Ered Luin", "Homes along the Lune."],
@@ -61,7 +62,7 @@ const Shire = (() => {
     ["North Moors", 100, 33, "Northfarthing", "Open country above Long Cleeve."],
     ["Bindbole Wood", 169, 92, "Westfarthing", "Wooded slopes above The Hill."],
     ["Woody End", 204, 142, "Southfarthing", "Forest south of Woodhall."],
-    ["Old Forest", 257, 126, "Buckland", "Woodland east of Buckland."],
+    ["Old Forest", 257, 126, "Buckland", "The warden’s lanterns mark the last safe stop before the hunting trails."],
     ["The Marish", 219, 143, "Eastfarthing", "Low fields west of the Brandywine."],
     ["Green Hill Country", 178, 138, "Southfarthing", "Rolling hills south of Tuckborough."],
     ["The Hill", 171, 103, "Hobbiton", "Hillside above Bag End and Bagshot Row."],
@@ -81,6 +82,10 @@ const Shire = (() => {
     ["Stock Ferry House", 221, 123, "Eastfarthing", "The ferry lane continues south past this house."],
     ["Bucklebury Ferry", 225, 129, "Eastfarthing", "Use the landing immediately east to cross the Brandywine."],
     ["Buckland Landing", 231, 129, "Buckland", "Use the landing immediately west to return to the Marish."],
+    ["Warden’s Camp", 253, 125, "Old Forest", "Speak to Rollo by the fire. Level 4 and supplies recommended beyond the lanterns."],
+    ["Wolf Run", 259, 119, "Old Forest", "Wolves prowl the northern loop. Draw them out one at a time."],
+    ["Withywindle Crossing", 257, 130, "Old Forest", "Cross the footbridge to the thorn groves and the Willow Glade."],
+    ["Willow Glade", 266, 139, "Old Forest", "The willow guardian lurks beyond the fallen logs."],
     ["Lake Evendim", 166, 8, "Evendim", "The lake lies north of Annúminas."],
     ["Bree Road", 244, 106, "Bree-land", "Follow the East Road to Bree-town."],
     ["The Prancing Pony", 311, 111, "Bree-land", "Use the inn door immediately north."],
@@ -107,6 +112,10 @@ const Shire = (() => {
     ["start", 167, 109], ["gardener", 164, 107], ["miller", 173, 110],
     ["pondVillager", 175, 115], ["marketClerk", 140, 131],
     ["wolf", 174, 95], ["bankRat", 185, 123], ["bankRat", 188, 125], ["marshWolf", 192, 127],
+    ["forestWarden", 252, 124],
+    ["forestWolf", 257, 118], ["forestWolf", 263, 116], ["forestWolf", 266, 122], ["forestWolf", 263, 127],
+    ["thornling", 261, 137], ["thornling", 264, 145], ["thornling", 272, 142],
+    ["willowGuardian", 269, 138],
   ];
   const ferries = [[226, 129], [230, 129]];
 
@@ -129,7 +138,7 @@ const Shire = (() => {
   };
 
   function moveOldSave(progress, revision) {
-    if (revision === rebuiltRevision || revision === referenceRevision) return progress;
+    if ([villageRevision, rebuiltRevision, referenceRevision].includes(revision)) return progress;
     if (!progress?.creatures || !Array.isArray(progress.loot)) return progress;
     const recent = revision === regionalRevision;
     const move = point => {
@@ -308,6 +317,12 @@ const Shire = (() => {
     road([[208, 129], [216, 135], [219, 143]]);
     road([[232, 112], [232, 117], [237, 122], [233, 129], [231, 129]]);
     road([[233, 129], [239, 126], [249, 124], [257, 126]]);
+    // The wolves circle the high ground. A single footbridge leads to the darker south bank.
+    road([[257, 126], [257, 123], [259, 119], [262, 118], [266, 119], [269, 122], [268, 125],
+      [265, 126], [262, 126], [260, 129], [257, 130], [257, 126]]);
+    road([[257, 130], [257, 136], [259, 140], [262, 141], [266, 139], [271, 139], [273, 142],
+      [271, 146], [267, 147], [263, 146], [260, 144], [259, 140]]);
+    road([[266, 139], [267, 137], [269, 137]]);
     road([[278, 97], [288, 86], [297, 76], [297, 65], [293, 49], [295, 36], [295, 21], [296, 9]]);
     road([[293, 49], [300, 50], [309, 46]]);
     road([[295, 21], [284, 21], [273, 29], [266, 36], [258, 44], [247, 44], [240, 39]]);
@@ -352,6 +367,13 @@ const Shire = (() => {
     court(308, 111, 316, 113, "stone");
     court(163, 100, 167, 105, "meadow");
     court(170, 110, 172, 110, "stone");
+    court(250, 123, 255, 126, "path");
+    // Open pockets in the southern canopy make it possible to circle around enemies.
+    ellipse(268, 138, 4, 3, (x, y) => {
+      if (wet(get(x, y)) || streets.has(key(x, y))) return;
+      commons.add(key(x, y));
+      set(x, y, "woodland");
+    });
     for (const [cx, cy, rx, ry] of [[165, 103, 7, 7], [175, 110, 5, 6], [180, 119, 8, 5],
       [138, 130, 10, 8], [222, 121, 6, 8], [311, 107, 12, 11], [175, 87, 5, 5]]) {
       ellipse(cx, cy, rx, ry, (x, y) => commons.add(key(x, y)));
@@ -465,6 +487,10 @@ const Shire = (() => {
       [308, 106, "lamp"], [309, 114, "fence"], [310, 114, "fence"], [314, 114, "fence"], [315, 114, "fence"], [313, 112, "barrel"], [310, 112, "bunting"], [314, 112, "trough"],
       [161, 107, "appleTree"], [158, 105, "appleTree"], [161, 110, "appleTree"], [157, 108, "appleTree"],
       [162, 106, "hedge"], [162, 107, "hedge"], [160, 105, "hedge"],
+      [250, 123, "lamp"], [255, 123, "lamp"], [250, 126, "barrel"], [253, 124, "campfire"], [254, 124, "bench"],
+      [255, 127, "fence"], [254, 127, "fence"], [257, 120, "deadwood"], [264, 120, "deadwood"], [265, 124, "deadwood"],
+      [256, 135, "reeds"], [258, 136, "reeds"], [262, 140, "deadwood"], [264, 140, "deadwood"],
+      [270, 136, "oldWillow"], [272, 138, "oldWillow"], [270, 140, "deadwood"], [266, 145, "oldWillow"],
     ]) {
       const pos = key(x, y);
       if ((!wet(get(x, y)) || type === "millWheel") && !lots.has(pos) && !reserved.has(pos)) object(x, y, type);
@@ -652,5 +678,9 @@ const Shire = (() => {
     return ferries.find(([fx, fy]) => y === fy && Math.abs(x - fx) <= 1);
   }
 
-  return { create, previousRevisions, moveOldSave, landmarkRegion, atlasLabels, labelOffsets, waterLabels, ferryAt, nearbyFerry };
+  function wardenCamp({ x, y, z }) {
+    return z === 0 && x >= 249 && x <= 255 && y >= 122 && y <= 127;
+  }
+
+  return { create, previousRevisions, moveOldSave, landmarkRegion, atlasLabels, labelOffsets, waterLabels, ferryAt, nearbyFerry, wardenCamp };
 })();

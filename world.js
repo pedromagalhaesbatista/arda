@@ -13,6 +13,7 @@ const World = (() => {
     barrel: "Barrel", lamp: "Lantern", door: "Door", sign: "Sign",
     smial: "Hobbit door", millWheel: "Water wheel", bank: "Grassy bank", table: "Table", bed: "Bed", chest: "Chest",
     partyTree: "Party tree", appleTree: "Apple tree", hedge: "Hedge", reeds: "Reeds",
+    deadwood: "Fallen log", oldWillow: "Old willow", campfire: "Campfire",
     bench: "Bench", bunting: "Bunting", basket: "Basket", seedCrate: "Seed basket", hearth: "Hearth", rug: "Rug",
     smialBlue: "Blue-door smial", smialRed: "Red-door smial", thatch: "Thatched roof",
     thatchChimney: "Thatched roof with chimney", tileChimney: "Tiled roof with chimney",
@@ -23,12 +24,13 @@ const World = (() => {
     ledger: "Mill ledger", notice: "Signpost", rat: "Cellar rat", wolf: "Wolf",
     merchant: "Bywater outfitter", pantryKeeper: "Poppy Goodbody", dragonKeeper: "Tansy Proudfoot",
     marketClerk: "Fosco Burrows", marketTrader: "Hilda Whitfoot", pondVillager: "Ned Cotton",
+    forestWarden: "Rollo the Warden", forestWolf: "Forest wolf", thornling: "Thornling", willowGuardian: "Willow guardian",
     seedBasket: "Seed basket", bankRat: "Bank rat", marshWolf: "Marsh wolf",
   };
   const solid = new Set([
     "tree", "pine", "rock", "wall", "sideWall", "timber", "sideTimber", "roof", "fence", "barrel", "lamp",
     "millWheel", "bank", "table", "bed", "chest", "partyTree", "appleTree", "hedge", "bench", "basket",
-    "hearth", "thatch", "thatchChimney", "tileChimney", "cottageWindow", "stoneWindow",
+    "hearth", "deadwood", "oldWillow", "campfire", "thatch", "thatchChimney", "tileChimney", "cottageWindow", "stoneWindow",
   ]);
   const architecture = {
     smialBank: "Smial earthwork", stall: "Market stall", trough: "Water trough", dock: "Ferry landing",

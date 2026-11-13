@@ -20,7 +20,7 @@
     ...Object.fromEntries(Object.keys(Villages.people).map(id => [id, "Talk"])),
   };
   const villagerQuests = Object.entries(Villages.quests);
-  const questByGiver = Object.fromEntries(villagerQuests.map(story => [story[1].giver, story]));
+  const villageStory = type => Villages.storyFor(villageQuests, type);
   const villageDialog = $("village-dialog");
   const movement = {
     w: [0, -1], a: [-1, 0], s: [0, 1], d: [1, 0],
@@ -1176,10 +1176,10 @@
               c.fillStyle = "#e8ddae";
               c.strokeText(World.markers[entity.type], x + 14, y - 10);
               c.fillText(World.markers[entity.type], x + 14, y - 10);
-              const story = questByGiver[entity.type];
-              if (story && Villages.stage(villageQuests, story[0]) !== "complete") {
-                const symbol = Villages.stage(villageQuests, story[0]) === "available" ? "!" : "?";
-                c.fillStyle = Villages.canTurnIn(villageQuests, story[0], player.kit.bag) || symbol === "!" ? "#ffd77e" : "#bab4a2";
+              const story = villageStory(entity.type);
+              const symbol = story && Villages.questSymbol(villageQuests, story[0], entity.type);
+              if (symbol) {
+                c.fillStyle = symbol === "!" || Villages.canTurnIn(villageQuests, story[0], player.kit.bag) ? "#ffd77e" : "#bab4a2";
                 c.strokeText(symbol, x + 14, y - 22);
                 c.fillText(symbol, x + 14, y - 22);
               }
@@ -1306,9 +1306,14 @@
       const name = document.createElement("strong");
       name.textContent = task.name;
       const objective = document.createElement("span");
-      const count = task.item ? Math.min(task.count, player.kit.bag[task.item] ?? 0) : 0;
-      objective.textContent = state === "complete" ? "Complete" : Villages.canTurnIn(villageQuests, id, player.kit.bag) ? task.returnTo :
-        task.objective + (task.item ? ` (${count}/${task.count})` : "");
+      const required = Object.entries(task.items ?? {});
+      const counts = required.map(([item, count]) => {
+        const have = Math.min(count, player.kit.bag[item] ?? 0);
+        return required.length === 1 ? `${have}/${count}` : `${have}/${count} ${Equipment.items[item].name.toLowerCase()}`;
+      });
+      if (state === "complete") objective.textContent = "Complete";
+      else if (!task.turnIn && Villages.canTurnIn(villageQuests, id, player.kit.bag)) objective.textContent = task.returnTo;
+      else objective.textContent = task.objective + (counts.length ? ` (${counts.join(", ")})` : "");
       row.append(name, objective);
       list.append(row);
     }
@@ -1346,11 +1351,12 @@
   function finishVillageQuest(id) {
     if (!Villages.canTurnIn(villageQuests, id, player.kit.bag)) return false;
     const task = Villages.quests[id];
-    if (task.item) Equipment.add(player.kit, task.item, -task.count);
+    const required = Object.entries(task.items ?? {});
+    for (const [item, count] of required) Equipment.add(player.kit, item, -count);
     for (const [item, count] of Object.entries(task.reward)) Equipment.add(player.kit, item, count);
     if (!setVillageStage(id, "complete")) {
       for (const [item, count] of Object.entries(task.reward)) Equipment.add(player.kit, item, -count);
-      if (task.item) Equipment.add(player.kit, task.item, task.count);
+      for (const [item, count] of required) Equipment.add(player.kit, item, count);
       return false;
     }
     journal(`Quest complete: ${task.name}. Reward: ${rewardText(task.reward)}.`);
@@ -1373,7 +1379,6 @@
     const person = Villages.people[type];
     const dx = player.x - villager.x, dy = player.y - villager.y;
     if (dx || dy) villager.face = OpenTibia.directionFromStepDelta(dx, dy, villager.face);
-    const story = questByGiver[type];
     const handoff = villagerQuests.find(([id, task]) => task.source === type && Villages.stage(villageQuests, id) === "active");
     $("village-speaker").textContent = World.markers[type];
 
@@ -1391,10 +1396,11 @@
         choice.addEventListener("click", action);
         buttons.append(choice);
       };
+      const story = villageStory(type);
       if (story && !response) {
         const [id, task] = story;
         const state = Villages.stage(villageQuests, id);
-        if (state === "available") {
+        if (Villages.canStart(villageQuests, id)) {
           speech.textContent = task.offer;
           reward.textContent = `Reward: ${rewardText(task.reward)}`;
           reward.hidden = false;
@@ -1404,16 +1410,16 @@
               showConversation(task.waiting);
             } else showConversation("Your quest could not be saved. Try again once saving is available.");
           });
-        } else if (Villages.canTurnIn(villageQuests, id, player.kit.bag)) {
-          speech.textContent = task.item ? "Do you have the tails for me?" : "Were you able to find it?";
+        } else if ((task.turnIn ?? task.giver) === type && Villages.canTurnIn(villageQuests, id, player.kit.bag)) {
+          speech.textContent = task.turnInPrompt ?? (task.items ? "Have you brought what I asked for?" : "Were you able to find it?");
           button(`Complete: ${task.name}`, () => {
             if (finishVillageQuest(id)) showConversation(task.ready);
             else showConversation("Your quest could not be saved. Try again once saving is available.");
           });
-        } else speech.textContent = state === "complete" ? task.complete : task.waiting;
+        } else if (state !== "available") speech.textContent = state === "complete" ? task.complete : task.waiting;
       }
       if (story) {
-        if (response) button("Quest", () => showConversation());
+        if (response) button(Villages.canStart(villageQuests, story[0]) ? story[1].name : "Quest", () => showConversation());
         else button(`About ${story[1].town}`, () => showConversation(person.greeting));
       }
       if (handoff && Villages.stage(villageQuests, handoff[0]) === "active") {
@@ -1609,6 +1615,11 @@
     return trader.type === "merchant" ? { name: "Bywater Outfitter", buy: Hunting.buy, sell: Hunting.sell } : Villages.people[trader.type].shop;
   }
 
+  function shopRequirement(shop, id) {
+    const quest = shop.requires?.[id];
+    return quest && Villages.stage(villageQuests, quest) !== "complete" ? Villages.quests[quest].name : null;
+  }
+
   function updateMerchant() {
     const { bag } = player.kit;
     $("shop-coins").textContent = `${bag.coin ?? 0} coins`;
@@ -1619,7 +1630,8 @@
     const focused = document.activeElement.dataset.tradeItem;
     list.replaceChildren();
     const buying = shopMode === "buy";
-    const stock = shopFor(merchant)[shopMode];
+    const shop = shopFor(merchant);
+    const stock = shop[shopMode];
     for (const [id, price] of Object.entries(stock)) {
       const item = Equipment.items[id];
       if (!buying && !bag[id]) continue;
@@ -1627,9 +1639,10 @@
       const label = document.createElement("span");
       label.textContent = buying ? item.name : `${item.name} ×${bag[id]}`;
       label.title = Equipment.description(id);
-      if (item.vocation) {
+      const locked = buying && shopRequirement(shop, id);
+      if (item.vocation || locked) {
         const requirement = document.createElement("small");
-        requirement.textContent = Vocations.get(item.vocation).name;
+        requirement.textContent = [item.vocation && Vocations.get(item.vocation).name, locked && `Finish ${locked}`].filter(Boolean).join(" · ");
         label.append(requirement);
       }
       const button = document.createElement("button");
@@ -1637,7 +1650,7 @@
       button.dataset.tradeItem = id;
       button.textContent = `${price}c`;
       button.setAttribute("aria-label", `${buying ? "Buy" : "Sell"} ${item.name} for ${price} coins`);
-      button.disabled = buying && ((bag.coin ?? 0) < price || Boolean(item.vocation && item.vocation !== player.vocation));
+      button.disabled = buying && ((bag.coin ?? 0) < price || Boolean(locked || item.vocation && item.vocation !== player.vocation));
       button.addEventListener("click", () => tradeItem(id));
       row.append(thumbnail(context => Art.icon(context, id), 20), label, button);
       list.append(row);
@@ -1654,8 +1667,9 @@
   function tradeItem(id) {
     if (!merchant || edit || merchant.z !== player.z || distance(player, merchant) > 1) return;
     const buying = shopMode === "buy";
-    const stock = shopFor(merchant)[shopMode];
-    if (!Object.hasOwn(stock, id)) return;
+    const shop = shopFor(merchant);
+    const stock = shop[shopMode];
+    if (!Object.hasOwn(stock, id) || (buying && shopRequirement(shop, id))) return;
     const price = stock[id];
     const { bag } = player.kit;
     const { name, vocation } = Equipment.items[id];
@@ -1970,6 +1984,7 @@
       if (!target || target.z !== player.z || target.hp <= 0 || distance(player, target) > spell.range) {
         return journal(`Select a target within ${spell.range} tiles.`, "combat");
       }
+      if (safeFromForest(target)) return journal("Step beyond the camp lanterns to fight.", "combat");
       if (!World.clearSight(currentFloor(), player, target)) return journal("Your target is out of sight.", "combat");
     } else if (spell.group === "healing" && player.hp === player.maxHp) {
       return journal("You are already at full health.", "combat");
@@ -2092,7 +2107,12 @@
       World.canStep(map, currentFloor(), actor.x, actor.y, defender.x, defender.y, () => false);
   }
 
+  function safeFromForest(enemy) {
+    return map.adventure === "shire" && Hunting.creatures[enemy.type]?.forest && Shire.wardenCamp(player);
+  }
+
   function canAttack(defender) {
+    if (safeFromForest(defender)) return false;
     const range = Equipment.items[player.kit.worn.weapon]?.range;
     return range ? distance(player, defender) <= range && World.clearSight(currentFloor(), player, defender) :
       canStrike(player, defender);
@@ -2121,10 +2141,10 @@
     journal(damage ? `${verb} the ${name.toLowerCase()} for ${damage}.` : `You miss the ${name.toLowerCase()}.`, "combat");
     if (target.hp === 0) {
       if (target.type === "rat") ratsDefeated++;
-      const { xp, coins, drops, respawns } = Hunting.creatures[target.type];
+      const { xp, coins, drops, respawns, respawnDelay = Hunting.respawnDelay } = Hunting.creatures[target.type];
       const item = drops?.[Combat.roll(0, drops.length - 1)];
       if (respawns) {
-        target.respawnAt = Date.now() + Hunting.respawnDelay;
+        target.respawnAt = Date.now() + respawnDelay;
         huntKills[target.type] = (huntKills[target.type] ?? 0) + 1;
       }
       const pile = loot.find(entry => entry.x === target.x && entry.y === target.y && entry.z === target.z);
@@ -2206,7 +2226,9 @@
     for (const entity of entities) {
       if (!creatureNames[entity.type] || entity.z !== player.z || entity.hp <= 0) continue;
       const range = distance(player, entity);
-      const inReach = canStrike(entity, player);
+      const forest = map.adventure === "shire" && Hunting.creatures[entity.type].forest;
+      const inCamp = safeFromForest(entity);
+      const inReach = !inCamp && canStrike(entity, player);
       if (inReach && now >= entity.nextHit) {
         stopPractice();
         entity.nextHit = now + Combat.swingInterval;
@@ -2236,9 +2258,9 @@
         }
       }
       if (inReach || now < entity.nextMove) continue;
-      const pursuing = range <= 4 && distance(player, entity.origin) <= 7;
+      const pursuing = !inCamp && range <= 4 && distance(player, entity.origin) <= 7;
       const goal = pursuing ? player : entity.origin;
-      const occupied = (x, y) => Boolean(here(x, y));
+      const occupied = (x, y) => Boolean(here(x, y)) || (forest && Shire.wardenCamp({ x, y, z: entity.z }));
       const next = World.route(map, floor, entity, goal, occupied)[0];
       entity.nextMove = now + 475;
       if (next && (next.x !== player.x || next.y !== player.y)) {

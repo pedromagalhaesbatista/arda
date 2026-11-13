@@ -13,7 +13,7 @@ const Villages = (() => {
       reward: { coin: 7, herb: 1 },
     },
     pantry: {
-      name: "Rats at the Pantry", town: "Bywater", giver: "dragonKeeper", item: "ratTail", count: 2,
+      name: "Rats at the Pantry", town: "Bywater", giver: "dragonKeeper", items: { ratTail: 2 },
       offer: "The bank rats have been getting into my pantry. Bring me two of their tails and I'll pay you for the trouble. Look southeast of the inn, beyond the hunting trail sign.",
       waiting: "The rats gather along the bank southeast of the inn. Save two tails for me when you collect your loot.",
       ready: "Two tails, just as we agreed. The flour sacks might get a quiet night for once.",
@@ -31,7 +31,29 @@ const Villages = (() => {
       found: "Poppy hands you the sealed market tally.",
       reward: { coin: 12, herb: 2 },
     },
+    beyondHedge: {
+      name: "Beyond the Hedge", town: "Bywater", giver: "pondVillager", turnIn: "forestWarden",
+      turnInPrompt: "Ned sent you? Tell me what he said.",
+      offer: "Buckland's warden sent word that the Old Forest trail has grown dangerous. Follow the East Road east to Stock, take the Bucklebury Ferry, then follow the lane east to the Warden's Camp. Will you carry word that help is coming?",
+      waiting: "Find Rollo at the Warden's Camp. Take the ferry east from Stock, then follow the lane from Bucklebury into the Old Forest. Bring supplies; I'd go at level 4 or higher.",
+      ready: "So Ned got the message. Good. The lanterns mark the safe camp. Beyond them, keep your eyes on the trail and try to draw the wolves one at a time.",
+      complete: "Rollo got the message? Good. If you're going back, top up your supplies first.",
+      objective: "Cross at Bucklebury Ferry and report to Rollo at the Warden's Camp",
+      returnTo: "Report to Rollo at the Warden's Camp",
+      reward: { coin: 12, herb: 2, manaDraught: 1 },
+    },
+    willowToll: {
+      name: "The Willow's Toll", town: "Old Forest", giver: "forestWarden", requires: "beyondHedge",
+      items: { forestFang: 3, willowHeart: 1 },
+      offer: "The wolves have taken the upper trail, and an old willow guardian has claimed the glade across the Withywindle. Bring me three wolf fangs and a piece of the guardian's heartwood. I'll give you a warden's coat and open the gear chest.",
+      waiting: "Hunt the wolves along the upper trail, then cross the Withywindle to the Willow Glade. Search the fallen guardian for heartwood. Thornlings guard the southern bank.",
+      ready: "That's the guardian's heartwood, all right. Take this coat. I've opened the gear chest if you're after something sturdier.",
+      complete: "The path is safer for now, but the forest always grows back. I still buy trophies if you hunt here again.",
+      objective: "Hunt wolves and the willow guardian", returnTo: "Bring the fangs and heartwood to Rollo",
+      reward: { coin: 30, wardenCoat: 1 },
+    },
   };
+  const stories = Object.entries(quests);
   const people = {
     gardener: { sprite: "gardener", greeting: "Bag End is the green door up the lane. The mill sits beside The Water, just east of here." },
     pantryKeeper: {
@@ -49,6 +71,15 @@ const Villages = (() => {
       shop: { name: "Michel Delving Market Hall", buy: { manaDraught: 4, tunic: 8, trousers: 8, buckler: 11, broadsword: 28 },
         sell: { cap: 2, tunic: 3, trousers: 3, boots: 2, buckler: 3, sword: 3, broadsword: 8, bow: 3 } },
     },
+    forestWarden: {
+      sprite: "miller", greeting: "Rest by the fire. The north loop is wolf country. Follow the stream crossing south for thornlings and the Willow Glade.",
+      shop: {
+        name: "Warden's Camp",
+        buy: { herb: 3, manaDraught: 4, thornShield: 44, longYewBow: 44, briarWraps: 44, willowPendant: 44, amberRing: 44 },
+        sell: { forestFang: 5, thornBark: 7, willowHeart: 15 },
+        requires: { thornShield: "willowToll", longYewBow: "willowToll", briarWraps: "willowToll", willowPendant: "willowToll", amberRing: "willowToll" },
+      },
+    },
     pondVillager: { sprite: "gardener", greeting: "You can tell a bank rat by the little ripple it leaves behind. For supplies, try the outfitter's door east of the Dragon." },
   };
 
@@ -56,10 +87,30 @@ const Villages = (() => {
     return progress[id] ?? "available";
   }
 
+  function canStart(progress, id) {
+    const required = quests[id].requires;
+    return stage(progress, id) === "available" && (!required || stage(progress, required) === "complete");
+  }
+
   function canTurnIn(progress, id, bag) {
-    const quest = quests[id];
+    const { items, turnIn } = quests[id];
     const state = stage(progress, id);
-    return state === "ready" || (state === "active" && Boolean(quest.item) && (bag[quest.item] ?? 0) >= quest.count);
+    if (state === "ready") return true;
+    if (state !== "active") return false;
+    return Boolean(turnIn || items && Object.entries(items).every(([item, count]) => (bag[item] ?? 0) >= count));
+  }
+
+  function questSymbol(progress, id, person) {
+    const { giver, turnIn = giver } = quests[id];
+    const state = stage(progress, id);
+    if (person === turnIn && (state === "active" || state === "ready")) return "?";
+    return person === giver && canStart(progress, id) ? "!" : null;
+  }
+
+  function storyFor(progress, person) {
+    return stories.find(([id]) => questSymbol(progress, id, person) === "?") ??
+      stories.find(([id]) => questSymbol(progress, id, person) === "!") ??
+      stories.find(([, task]) => task.giver === person);
   }
 
   function valid(progress) {
@@ -68,5 +119,5 @@ const Villages = (() => {
         (state === "active" || state === "complete" || (state === "ready" && quests[id].source)));
   }
 
-  return { quests, people, stage, canTurnIn, valid };
+  return { quests, people, stage, canStart, canTurnIn, questSymbol, storyFor, valid };
 })();

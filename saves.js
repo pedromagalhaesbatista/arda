@@ -114,6 +114,7 @@ const Saves = (() => {
     if (!record(value) || value.version !== 1 || !record(value.player)) return false;
     if (Object.hasOwn(value, "name") && !nameValid(value.name)) return false;
     if (Object.hasOwn(value, "actions") && !actionsValid(value.actions)) return false;
+    if (Object.hasOwn(value, "villageQuests") && !Villages.valid(value.villageQuests)) return false;
     if (Object.hasOwn(value, "huntKills") && (!record(value.huntKills) ||
         !Object.entries(value.huntKills).every(([id, count]) => Object.hasOwn(Hunting.creatures, id) &&
           Hunting.creatures[id].respawns && integer(count, 0)))) return false;

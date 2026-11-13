@@ -340,6 +340,7 @@ const Art = (() => {
   }
 
   function object(c, type, x, y, vx = 0, vy = 0) {
+    if (type === "seedCrate") type = "basket";
     if (type === "rug" || type === "bunting") return decoration(c, type, x, y);
     if (type === "partyTree") {
       c.save();
@@ -373,7 +374,7 @@ const Art = (() => {
   }
 
   function actor(c, type, x, y, face = OpenTibia.Direction.South, step = 0) {
-    draw(c, sprites.actors[type], x, y, face, 0, step, 1);
+    draw(c, sprites.actors[Villages.people[type]?.sprite ?? type], x, y, face, 0, step, 1);
   }
 
   function corpse(c, type, x, y) {
@@ -415,7 +416,8 @@ const Art = (() => {
     if (type === "notice") return signpost(c, 0, 0);
     if (type === "rug" || type === "bunting") return decoration(c, type, 0, 0);
     const group = layer === "objects" ? sprites.objects : sprites.actors;
-    const thing = group[type];
+    const thing = type === "seedCrate" || type === "seedBasket" ? sprites.objects.basket :
+      group[Villages.people[type]?.sprite ?? type];
     if (!thing) return icon(c, type);
     c.save();
     const zoom = thing.width > 1 || thing.height > 1 ? 0.5 : 1;

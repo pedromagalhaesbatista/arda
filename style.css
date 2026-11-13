@@ -616,3 +616,16 @@ h1 { font: bold 14px Arial, sans-serif; }
   .bar-dock .action-bar { flex-direction: row; }
   .bar-dock[data-bar-edge] .bar-resize { width: 100%; height: 7px; inset: auto 0 0; cursor: ns-resize; }
 }
+
+#village-quests { list-style: none; padding: 0; margin: 0; font-size: 11px; }
+#village-quests li { display: grid; gap: 2px; padding: 5px; border-top: 1px solid var(--line); }
+#village-quests strong, #village-reward { color: var(--gold); }
+#village-dialog {
+  color: #e9e2ce; background: #30332d; border: 1px solid #8d8061; padding: 0;
+  width: min(410px, calc(100vw - 28px)); box-shadow: 0 10px 36px #000a;
+}
+#village-dialog::backdrop { background: #10120eb0; }
+#village-dialog .panel-heading { margin: 0; }
+.village-dialog-body { padding: 12px; }
+.village-dialog-body p { margin: 0 0 10px; line-height: 1.45; }
+#village-choices { display: flex; gap: 6px; flex-wrap: wrap; }

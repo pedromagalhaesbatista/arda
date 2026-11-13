@@ -16,7 +16,12 @@
     fist: { label: "fist fighting", value: "fist-skill", meter: "fist-progress", requirement: "Stow your weapon" },
     magic: { label: "magic", value: "magic-level", meter: "magic-progress" },
   };
-  const markerActions = { keeper: "Talk", miller: "Talk", gardener: "Talk", merchant: "Trade", ledger: "Take", notice: "Read" };
+  const markerActions = { keeper: "Talk", miller: "Talk", merchant: "Trade", ledger: "Take", notice: "Read", seedBasket: "Search",
+    ...Object.fromEntries(Object.keys(Villages.people).map(id => [id, "Talk"])),
+  };
+  const villagerQuests = Object.entries(Villages.quests);
+  const questByGiver = Object.fromEntries(villagerQuests.map(story => [story[1].giver, story]));
+  const villageDialog = $("village-dialog");
   const movement = {
     w: [0, -1], a: [-1, 0], s: [0, 1], d: [1, 0],
     arrowup: [0, -1], arrowleft: [-1, 0], arrowdown: [0, 1], arrowright: [1, 0]
@@ -63,6 +68,7 @@
   let merchant = null;
   let shopMode = "buy";
   let huntKills = {};
+  let villageQuests = {};
   let nextHeal = 0;
   let nextMana = 0;
   let consoleChannel = "all";
@@ -163,7 +169,7 @@
     for (const floor of map.floors) {
       for (const [key, marker] of Object.entries(floor.markers)) {
         const creature = Hunting.creatures[marker.type];
-        if (!creature && !["keeper", "gardener", "miller", "merchant"].includes(marker.type)) continue;
+        if (!creature && !["keeper", "miller", "merchant"].includes(marker.type) && !Villages.people[marker.type]) continue;
         const [x, y] = key.split(",").map(Number);
         const hp = creature?.hp ?? 8;
         entities.push({ x, y, z: floor.z, origin: { x, y }, type: marker.type, hp, maxHp: hp, face: OpenTibia.Direction.South, nextMove: 0, nextHit: 0 });
@@ -171,6 +177,7 @@
     }
     loot = [];
     huntKills = {};
+    villageQuests = {};
     closeLoot();
     closeMerchant();
     nextHeal = nextMana = 0;
@@ -213,7 +220,7 @@
         x: position.x, y: position.y, z, hp, maxHp, xp, level, face, kit, stance, pursuit,
         vocation, sword, shielding, distance, fist, mana, magic, spellState,
       },
-      quest, ratsDefeated, hasLedger, creatures: creatureSnapshot(), loot, huntKills,
+      quest, ratsDefeated, hasLedger, creatures: creatureSnapshot(), loot, huntKills, villageQuests,
     };
   }
 
@@ -360,6 +367,7 @@
       }
       ({ quest, ratsDefeated, hasLedger, loot } = data);
       huntKills = data.huntKills ?? {};
+      villageQuests = data.villageQuests ?? {};
       return "restored";
     } catch {
       saveBlocked = true;
@@ -518,7 +526,7 @@
       const key = Saves.progressKey(selectedWorld, playRevision, id);
       const progress = {
         version: 1, name, actions: [...defaultActions], player: startingPlayer(vocation),
-        quest: "available", ratsDefeated: 0, hasLedger: false, creatures: creatureSnapshot(true), loot: [],
+        quest: "available", ratsDefeated: 0, hasLedger: false, creatures: creatureSnapshot(true), loot: [], villageQuests: {},
       };
       Saves.write(key, progress, null);
       switchCharacter(id);
@@ -1129,7 +1137,9 @@
         if (marker?.type === "ledger" && (edit || !hasLedger)) Art.icon(c, "ledger", px(x), py(y));
         if (edit && marker) {
           if (marker.type === "start") Art.icon(c, "start", px(x), py(y));
-          else if (!["link", "notice", "ledger"].includes(marker.type)) {
+          else if (marker.type === "seedBasket" && object !== "seedCrate") {
+            draws.push({ y, depth: 0, draw: () => Art.object(c, "seedCrate", px(x), py(y), x, y) });
+          } else if (!["link", "notice", "ledger", "seedBasket"].includes(marker.type)) {
             draws.push({ y, depth: 1, draw: () => Art.actor(c, marker.type, px(x), py(y)) });
           }
         }
@@ -1158,7 +1168,7 @@
             }
             Art.actor(c, entity.type ?? "player", x, y, entity.face, pos.step);
             const friendly = entity !== player && !creatureNames[entity.type];
-            if (["miller", "gardener", "merchant"].includes(entity.type)) {
+            if (["miller", "merchant"].includes(entity.type) || Villages.people[entity.type]) {
               c.font = "bold 10px system-ui";
               c.textAlign = "center";
               c.lineWidth = 2;
@@ -1166,6 +1176,13 @@
               c.fillStyle = "#e8ddae";
               c.strokeText(World.markers[entity.type], x + 14, y - 10);
               c.fillText(World.markers[entity.type], x + 14, y - 10);
+              const story = questByGiver[entity.type];
+              if (story && Villages.stage(villageQuests, story[0]) !== "complete") {
+                const symbol = Villages.stage(villageQuests, story[0]) === "available" ? "!" : "?";
+                c.fillStyle = Villages.canTurnIn(villageQuests, story[0], player.kit.bag) || symbol === "!" ? "#ffd77e" : "#bab4a2";
+                c.strokeText(symbol, x + 14, y - 22);
+                c.fillText(symbol, x + 14, y - 22);
+              }
             }
             if (entity === player || friendly || entity === target || entity.hp < entity.maxHp) {
               c.fillStyle = "#24231c";
@@ -1277,9 +1294,25 @@
 
   function updateQuest() {
     const status = $("quest-status");
-    status.hidden = quest === "available";
-    $("quest-empty").hidden = quest !== "available";
-    if (quest === "available") return;
+    const list = $("village-quests");
+    status.hidden = edit || quest === "available";
+    const visible = edit ? [] : villagerQuests.filter(([id]) => Object.hasOwn(villageQuests, id));
+    list.hidden = !visible.length;
+    $("quest-empty").hidden = edit || !status.hidden || visible.length > 0;
+    list.replaceChildren();
+    for (const [id, task] of visible) {
+      const state = Villages.stage(villageQuests, id);
+      const row = document.createElement("li");
+      const name = document.createElement("strong");
+      name.textContent = task.name;
+      const objective = document.createElement("span");
+      const count = task.item ? Math.min(task.count, player.kit.bag[task.item] ?? 0) : 0;
+      objective.textContent = state === "complete" ? "Complete" : Villages.canTurnIn(villageQuests, id, player.kit.bag) ? task.returnTo :
+        task.objective + (task.item ? ` (${count}/${task.count})` : "");
+      row.append(name, objective);
+      list.append(row);
+    }
+    if (status.hidden) return;
     const shire = map.adventure === "shire";
     const name = shire ? "The Mill Ledger" : "Rats in the Cellar";
     let objective = "Complete";
@@ -1289,6 +1322,115 @@
       else objective = shire ? "Return to the miller" : "Return to the innkeeper";
     }
     status.textContent = `${name} · ${objective}`;
+  }
+
+  function setVillageStage(id, state) {
+    const previous = villageQuests[id];
+    villageQuests[id] = state;
+    if (saveProgress(true)) {
+      needsRefresh = true;
+      return true;
+    }
+    if (previous === undefined) delete villageQuests[id];
+    else villageQuests[id] = previous;
+    journal("Quest progress could not be saved.");
+    return false;
+  }
+
+  function collectQuestClue(id) {
+    if (Villages.stage(villageQuests, id) !== "active" || !setVillageStage(id, "ready")) return false;
+    journal(Villages.quests[id].found);
+    return true;
+  }
+
+  function finishVillageQuest(id) {
+    if (!Villages.canTurnIn(villageQuests, id, player.kit.bag)) return false;
+    const task = Villages.quests[id];
+    if (task.item) Equipment.add(player.kit, task.item, -task.count);
+    for (const [item, count] of Object.entries(task.reward)) Equipment.add(player.kit, item, count);
+    if (!setVillageStage(id, "complete")) {
+      for (const [item, count] of Object.entries(task.reward)) Equipment.add(player.kit, item, -count);
+      if (task.item) Equipment.add(player.kit, task.item, task.count);
+      return false;
+    }
+    journal(`Quest complete: ${task.name}. Reward: ${rewardText(task.reward)}.`);
+    inventoryChanged();
+    return true;
+  }
+
+  function rewardText(reward) {
+    return Object.entries(reward).map(([id, count]) => id === "coin" ? `${count} coins` :
+      `${count} × ${Equipment.items[id].name.toLowerCase()}`).join(", ");
+  }
+
+  function talkToVillager(villager) {
+    if (!villager || villager.z !== player.z || distance(player, villager) > 1) return;
+    stopActions();
+    closeLoot();
+    closeMerchant();
+    magicClock = null;
+    const { type } = villager;
+    const person = Villages.people[type];
+    const dx = player.x - villager.x, dy = player.y - villager.y;
+    if (dx || dy) villager.face = OpenTibia.directionFromStepDelta(dx, dy, villager.face);
+    const story = questByGiver[type];
+    const handoff = villagerQuests.find(([id, task]) => task.source === type && Villages.stage(villageQuests, id) === "active");
+    $("village-speaker").textContent = World.markers[type];
+
+    function showConversation(response) {
+      const speech = $("village-speech");
+      const reward = $("village-reward");
+      const buttons = $("village-choices");
+      buttons.replaceChildren();
+      reward.hidden = true;
+      speech.textContent = response ?? person.greeting;
+      const button = (label, action) => {
+        const choice = document.createElement("button");
+        choice.type = "button";
+        choice.textContent = label;
+        choice.addEventListener("click", action);
+        buttons.append(choice);
+      };
+      if (story && !response) {
+        const [id, task] = story;
+        const state = Villages.stage(villageQuests, id);
+        if (state === "available") {
+          speech.textContent = task.offer;
+          reward.textContent = `Reward: ${rewardText(task.reward)}`;
+          reward.hidden = false;
+          button(`Accept: ${task.name}`, () => {
+            if (setVillageStage(id, "active")) {
+              journal(`Quest started: ${task.name}.`);
+              showConversation(task.waiting);
+            } else showConversation("Your quest could not be saved. Try again once saving is available.");
+          });
+        } else if (Villages.canTurnIn(villageQuests, id, player.kit.bag)) {
+          speech.textContent = task.item ? "Do you have the tails for me?" : "Were you able to find it?";
+          button(`Complete: ${task.name}`, () => {
+            if (finishVillageQuest(id)) showConversation(task.ready);
+            else showConversation("Your quest could not be saved. Try again once saving is available.");
+          });
+        } else speech.textContent = state === "complete" ? task.complete : task.waiting;
+      }
+      if (story) {
+        if (response) button("Quest", () => showConversation());
+        else button(`About ${story[1].town}`, () => showConversation(person.greeting));
+      }
+      if (handoff && Villages.stage(villageQuests, handoff[0]) === "active") {
+        button("Ask about the market tally", () => {
+          showConversation(collectQuestClue(handoff[0]) ? person.handoff : "Your quest could not be saved. Try again once saving is available.");
+        });
+      }
+      if (person.shop) button("Trade", () => {
+        villageDialog.close();
+        openMerchant(villager);
+      });
+      button("Goodbye", () => villageDialog.close());
+      if (villageDialog.open) buttons.firstElementChild.focus();
+    }
+
+    showConversation();
+    if (!villageDialog.open) villageDialog.showModal();
   }
 
   function talk() {
@@ -1385,8 +1527,14 @@
       openMerchant(here(x, y));
       return true;
     }
-    if (marker?.type === "gardener") {
-      journal("Sam Gamgee: Bag End’s the green door up the lane. You’ll find the mill beside The Water, east of here.");
+    if (Villages.people[marker?.type]) {
+      talkToVillager(here(x, y));
+      return true;
+    }
+    if (marker?.type === "seedBasket") {
+      const state = Villages.stage(villageQuests, "seeds");
+      if (state === "active") collectQuestClue("seeds");
+      else journal(state === "available" ? "A basket of seeds sits by the bench. Ask Sam before taking anything." : "You've already taken Sam's packet of seeds.");
       return true;
     }
     if (marker?.type === "ledger") return takeLedger();
@@ -1424,6 +1572,14 @@
         return;
       }
     }
+    for (const [dx, dy] of offsets) {
+      const x = player.x + dx, y = player.y + dy;
+      const type = floor.markers[World.key(x, y)]?.type;
+      if (["seedBasket", "miller", "keeper"].includes(type) || Villages.people[type]) {
+        useAt(x, y);
+        return;
+      }
+    }
     if (useAt(player.x, player.y)) return;
     for (const [dx, dy] of offsets) if (useAt(player.x + dx, player.y + dy)) return;
     journal("Move beside a person, passage, or item to interact.");
@@ -1439,6 +1595,7 @@
     closeLoot();
     merchant = trader;
     shopMode = "buy";
+    $("shop-title").textContent = shopFor(trader).name;
     $("merchant-panel").hidden = false;
     updateMerchant();
   }
@@ -1446,6 +1603,10 @@
   function closeMerchant() {
     merchant = null;
     $("merchant-panel").hidden = true;
+  }
+
+  function shopFor(trader) {
+    return trader.type === "merchant" ? { name: "Bywater Outfitter", buy: Hunting.buy, sell: Hunting.sell } : Villages.people[trader.type].shop;
   }
 
   function updateMerchant() {
@@ -1458,7 +1619,7 @@
     const focused = document.activeElement.dataset.tradeItem;
     list.replaceChildren();
     const buying = shopMode === "buy";
-    const stock = buying ? Hunting.buy : Hunting.sell;
+    const stock = shopFor(merchant)[shopMode];
     for (const [id, price] of Object.entries(stock)) {
       const item = Equipment.items[id];
       if (!buying && !bag[id]) continue;
@@ -1485,7 +1646,7 @@
     if (!list.childElementCount) {
       const empty = document.createElement("li");
       empty.className = "panel-note";
-      empty.textContent = "No goods in your backpack to sell.";
+      empty.textContent = Object.keys(stock).length ? "You have nothing this shop buys." : "This shop only sells supplies.";
       list.append(empty);
     }
   }
@@ -1493,7 +1654,7 @@
   function tradeItem(id) {
     if (!merchant || edit || merchant.z !== player.z || distance(player, merchant) > 1) return;
     const buying = shopMode === "buy";
-    const stock = buying ? Hunting.buy : Hunting.sell;
+    const stock = shopFor(merchant)[shopMode];
     if (!Object.hasOwn(stock, id)) return;
     const price = stock[id];
     const { bag } = player.kit;
@@ -2311,7 +2472,7 @@
       if (state !== "continued") announcePlay(state);
     }
     $("game-saving").hidden = edit;
-    if (edit) $("quest-status").hidden = true;
+    if (edit) updateQuest();
     hover = null;
     $("play").setAttribute("aria-pressed", String(!edit));
     $("edit").setAttribute("aria-pressed", String(edit));
@@ -2630,6 +2791,9 @@
       if (button && !button.contains(event.relatedTarget)) button.classList.remove("drop-ready");
     });
   }
+  villageDialog.addEventListener("close", () => {
+    if (!villageDialog.open) canvas.focus({ preventScroll: true });
+  });
   $("close-loot").addEventListener("click", closeLoot);
   $("close-merchant").addEventListener("click", closeMerchant);
   for (const button of $("merchant-panel").querySelectorAll("[data-shop]")) {
@@ -2669,7 +2833,7 @@
   });
 
   window.addEventListener("keydown", event => {
-    if ($("character-screen").open || $("shire-atlas").open || event.target.matches("input, select, textarea") || event.altKey) return;
+    if (villageDialog.open || $("character-screen").open || $("shire-atlas").open || event.target.matches("input, select, textarea") || event.altKey) return;
     const key = event.key.toLowerCase();
     if (edit && (event.metaKey || event.ctrlKey) && key === "z") {
       event.preventDefault();
@@ -2718,7 +2882,7 @@
   new ResizeObserver(resize).observe(canvas);
 
   function frame(now) {
-    if (!edit && !document.hidden && !$("character-screen").open && !$("shire-atlas").open) {
+    if (!edit && !document.hidden && !villageDialog.open && !$("character-screen").open && !$("shire-atlas").open) {
       updateGame(now);
       if (needsRefresh || Math.floor((now - hunt.start) / 1000) !== huntSecond) updateHunt(now);
       if (needsRefresh) savePending = true;

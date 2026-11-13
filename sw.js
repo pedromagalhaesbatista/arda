@@ -2,7 +2,7 @@
 
 const root = new URL("./", self.location.href);
 const cachePrefix = `arda:${root.pathname}:`;
-const release = 13;
+const release = 14;
 const cacheName = `${cachePrefix}${release}`;
 const files = [
   "index.html",
@@ -11,6 +11,7 @@ const files = [
   "opentibia/assets/sprites.js",
   "world.js",
   "shire.js",
+  "villages.js",
   "art.js",
   "vocations.js",
   "equipment.js",

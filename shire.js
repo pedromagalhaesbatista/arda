@@ -5,8 +5,9 @@ const Shire = (() => {
   const width = 320;
   const height = 180;
   const regionalRevision = "1f9b74a99de1818e";
+  const rebuiltRevision = "456a8a81b0064ba7";
   const referenceRevision = "43820befb457b342";
-  const previousRevisions = [referenceRevision, regionalRevision, "a68195270fd424c9", "b902d48dab786345", "e6258651b64f76aa"];
+  const previousRevisions = [rebuiltRevision, referenceRevision, regionalRevision, "a68195270fd424c9", "b902d48dab786345", "e6258651b64f76aa"];
   const places = [
     ["Duillond", 9, 62, "Ered Luin", "Elven settlement."],
     ["Falathlorn Homesteads", 20, 73, "Ered Luin", "Homes along the Lune."],
@@ -67,15 +68,16 @@ const Shire = (() => {
     ["Brandywine Bridge", 226, 114, "Eastfarthing", "East Road crossing north of Stock."],
   ];
   const localPlaces = [
-    ["Bagshot Row", 168, 104, "Hobbiton", "Homes cut into the foot of The Hill."],
+    ["Bagshot Row", 168, 104, "Hobbiton", "The blue door leads to Poppy’s pantry."],
+    ["Party Field Basket", 164, 104, "Hobbiton", "Sam’s seed basket is beside the bench to the northwest."],
     ["Hobbiton Mill", 169, 108, "Hobbiton", "The mill and its storehouse stand just east, beside The Water."],
     ["Hobbiton Bridge", 167, 113, "Hobbiton", "Cross The Water to take the lane to Bywater."],
     ["Bywater Pool", 177, 114, "Bywater", "The landing looks north across the pool."],
     ["The Green Dragon", 180, 119, "Bywater", "The inn stands off the village lane."],
-    ["Bywater Outfitter", 183, 118, "Bywater", "Buy supplies and sell your hunting loot."],
+    ["Bywater Outfitter", 185, 119, "Bywater", "Use the shop door just north to buy supplies and sell hunting loot."],
     ["Bywater Hunting Trail", 183, 122, "Bywater", "Follow the bank south and east for rats and marsh wolves."],
     ["Overhill Smial", 174, 87, "Westfarthing", "Use the blue door north of this path."],
-    ["Michel Delving Market Hall", 138, 130, "Westfarthing", "Enter the stone hall on the market square."],
+    ["Michel Delving Market Hall", 138, 130, "Westfarthing", "Trade inside with Hilda, or speak to Fosco in the square."],
     ["Stock Ferry House", 221, 123, "Eastfarthing", "The ferry lane continues south past this house."],
     ["Bucklebury Ferry", 225, 129, "Eastfarthing", "Use the landing immediately east to cross the Brandywine."],
     ["Buckland Landing", 231, 129, "Buckland", "Use the landing immediately west to return to the Marish."],
@@ -102,7 +104,8 @@ const Shire = (() => {
     ["Brandywine", 227, 85, 1.43], ["Shirebourn", 187, 176, -.08], ["Withywindle", 260, 136, -.42],
   ];
   const actors = [
-    ["start", 167, 109], ["gardener", 164, 107], ["miller", 173, 110], ["merchant", 183, 117],
+    ["start", 167, 109], ["gardener", 164, 107], ["miller", 173, 110],
+    ["pondVillager", 175, 115], ["marketClerk", 140, 131],
     ["wolf", 174, 95], ["bankRat", 185, 123], ["bankRat", 188, 125], ["marshWolf", 192, 127],
   ];
   const ferries = [[226, 129], [230, 129]];
@@ -126,7 +129,7 @@ const Shire = (() => {
   };
 
   function moveOldSave(progress, revision) {
-    if (revision === referenceRevision) return progress;
+    if (revision === rebuiltRevision || revision === referenceRevision) return progress;
     if (!progress?.creatures || !Array.isArray(progress.loot)) return progress;
     const recent = revision === regionalRevision;
     const move = point => {
@@ -454,7 +457,7 @@ const Shire = (() => {
     for (const [x, y, type] of [
       [162, 103, "partyTree"], [163, 102, "bunting"], [164, 103, "bench"],
       [173, 111, "millWheel"], [173, 108, "barrel"], [175, 117, "bench"], [176, 114, "lamp"], [178, 115, "bench"],
-      [182, 121, "barrel"], [184, 119, "basket"], [185, 119, "lamp"],
+      [182, 121, "barrel"], [187, 119, "lamp"],
       [135, 133, "stall"], [136, 133, "basket"], [141, 131, "stall"], [142, 131, "barrel"],
       [134, 125, "hedge"], [135, 125, "hedge"], [141, 124, "hedge"], [142, 124, "hedge"],
       [134, 127, "flowers"], [142, 127, "flowers"], [143, 131, "lamp"],
@@ -541,6 +544,9 @@ const Shire = (() => {
     marker(...west, "link", { x: east[0], y: east[1], z: 0 });
     marker(...east, "link", { x: west[0], y: west[1], z: 0 });
 
+    court(183, 119, 186, 119, "stone");
+    marker(163, 103, "seedBasket");
+    object(163, 103, "seedCrate");
     addInteriors();
     return World.validate(map);
 
@@ -565,9 +571,9 @@ const Shire = (() => {
           [44, 24, "hearth"], [45, 28, "rug"], [45, 29, "rug"], [49, 24, "basket"], [48, 24, "barrel"],
           [48, 25, "table"], [49, 25, "table"], [41, 28, "lamp"], [43, 24, "table"], [42, 24, "bench"],
         ]],
-        [-4, "Bagshot Row Cottage", [168, 103], [30, 12], [25, 6, 35, 13], "wood", [
+        [-4, "Bagshot Row Pantry", [168, 103], [30, 12], [25, 6, 35, 13], "wood", [
           [27, 8, "bed"], [27, 9, "chest"], [30, 7, "hearth"], [32, 9, "table"], [33, 9, "bench"], [30, 11, "rug"],
-          ...[7, 8, 11, 12].map(y => [28, y, "framed"]), [28, 9, "framedDoor"], [33, 7, "basket"],
+          ...[7, 8, 11, 12].map(y => [28, y, "framed"]), [28, 9, "framedDoor"], [33, 7, "basket"], [31, 8, "barrel"], [33, 8, "barrel"],
         ]],
         [-5, "Overhill Smial", [174, 86], [10, 12], [6, 6, 14, 12], "wood", [
           [7, 7, "chest"], [8, 7, "bed"], [12, 7, "hearth"], [10, 10, "rug"], [12, 10, "table"],
@@ -588,7 +594,18 @@ const Shire = (() => {
           [12, 10, "table"], [13, 10, "bench"], [15, 10, "lamp"], [10, 10, "rug"], [10, 11, "rug"],
           [11, 6, "framed"], [11, 7, "framedDoor"], [11, 8, "framed"],
         ]],
+        [-9, "Bywater Outfitter", [185, 118], [10, 12], [5, 5, 15, 12], "wood", [
+          [7, 7, "barrel"], [8, 7, "chest"], [13, 7, "basket"], [14, 7, "barrel"], [7, 10, "table"],
+          [8, 9, "table"], [9, 9, "table"], [11, 9, "table"], [12, 9, "table"],
+          [13, 10, "basket"], [10, 10, "rug"], [10, 11, "rug"],
+        ]],
       ];
+      const residents = {
+        "-3": [46, 24, "dragonKeeper"],
+        "-4": [32, 8, "pantryKeeper"],
+        "-6": [13, 10, "marketTrader"],
+        "-9": [10, 8, "merchant"],
+      };
       for (const [z, name, door, entrance, bounds, material, furniture] of rooms) {
         const floor = World.makeFloor(map, z, name, "void");
         map.floors.push(floor);
@@ -608,7 +625,12 @@ const Shire = (() => {
         delete floor.objects[key(ex, ey)];
         open(x, y);
         marker(x, y, "link", { x: ex, y: ey, z });
-        marker(ex, ey, "link", { x, y, z: 0 }, floor);
+        // The outfitter opens onto a shared forecourt, so leave through to the sidewalk.
+        marker(ex, ey, "link", { x, y: z === -9 ? y + 1 : y, z: 0 }, floor);
+        if (residents[z]) {
+          const [rx, ry, type] = residents[z];
+          marker(rx, ry, type, {}, floor);
+        }
         if (z === -2) {
           marker(35, 17, "rat", {}, floor);
           marker(37, 20, "rat", {}, floor);

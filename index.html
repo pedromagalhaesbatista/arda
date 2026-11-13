@@ -10,6 +10,7 @@
   <script defer src="opentibia/assets/sprites.js"></script>
   <script defer src="world.js"></script>
   <script defer src="shire.js"></script>
+  <script defer src="villages.js"></script>
   <script defer src="art.js"></script>
   <script defer src="vocations.js"></script>
   <script defer src="equipment.js"></script>
@@ -176,6 +177,7 @@
         <section class="panel" data-window="quest">
           <div class="panel-heading"><h3><img src="opentibia/ui/questlog.png" alt="">Quest Tracker</h3></div>
           <p id="quest-status" hidden></p>
+          <ul id="village-quests" aria-label="Village quests" hidden></ul>
           <p id="quest-empty" class="panel-note">No active quest</p>
         </section>
         <section id="battle-panel" class="panel battle" data-window="battle">
@@ -238,7 +240,7 @@
         </section>
         <section id="merchant-panel" class="panel" data-window="merchant" hidden>
           <div class="panel-heading">
-            <h3><img src="opentibia/ui/inventory.png" alt="">Bywater Outfitter</h3>
+            <h3><img src="opentibia/ui/inventory.png" alt=""><span id="shop-title">Shop</span></h3>
             <button id="close-merchant" aria-label="Close shop">×</button>
           </div>
           <div class="shop-controls">
@@ -289,6 +291,18 @@
       <button id="atlas-walk" type="button">Walk there</button>
     </div>
   </dialog>
+  <dialog id="village-dialog" aria-labelledby="village-speaker">
+    <div class="panel-heading">
+      <h3 id="village-speaker">Villager</h3>
+      <form method="dialog"><button aria-label="Close conversation" autofocus>×</button></form>
+    </div>
+    <div class="village-dialog-body">
+      <p id="village-speech"></p>
+      <p id="village-reward" hidden></p>
+      <div id="village-choices"></div>
+    </div>
+  </dialog>
+
   <dialog id="character-screen" aria-labelledby="character-screen-title" class="panel">
     <header class="panel-heading">
       <h3 id="character-screen-title"><img src="opentibia/ui/skills.png" alt="">Characters</h3>

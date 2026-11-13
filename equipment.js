@@ -110,13 +110,15 @@ const Combat = (() => {
     return { damage: Math.max(0, remainder - armor), blocked: false };
   }
 
-  function train(skill) {
-    skill.tries++;
-    if (skill.tries < skill.goal) return false;
-    skill.level++;
-    skill.tries = 0;
-    skill.goal = Math.ceil(skill.goal * 1.35);
-    return true;
+  function train(skill, amount = 1) {
+    const level = skill.level;
+    skill.tries += amount;
+    while (skill.tries >= skill.goal) {
+      skill.tries -= skill.goal;
+      skill.level++;
+      skill.goal = Math.ceil(skill.goal * 1.35);
+    }
+    return skill.level !== level;
   }
 
   return { swingInterval, attack, mitigate, train, roll };

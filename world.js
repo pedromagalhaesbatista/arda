@@ -36,6 +36,32 @@ const World = (() => {
     return passable(map, floor, nx, y) && passable(map, floor, x, ny);
   }
 
+  function clearSight(floor, from, to) {
+    const dx = Math.abs(to.x - from.x);
+    const dy = Math.abs(to.y - from.y);
+    const sx = Math.sign(to.x - from.x);
+    const sy = Math.sign(to.y - from.y);
+    let { x, y } = from;
+    let crossedX = 0;
+    let crossedY = 0;
+    const blocksSight = (tx, ty) => solid.has(floor.objects[key(tx, ty)]);
+    // Compare when the ray next crosses each tile edge. A corner needs both sides open.
+    while (x !== to.x || y !== to.y) {
+      const edge = (2 * crossedX + 1) * dy - (2 * crossedY + 1) * dx;
+      if (edge === 0 && (blocksSight(x + sx, y) || blocksSight(x, y + sy))) return false;
+      if (edge <= 0) {
+        x += sx;
+        crossedX++;
+      }
+      if (edge >= 0) {
+        y += sy;
+        crossedY++;
+      }
+      if (blocksSight(x, y)) return false;
+    }
+    return true;
+  }
+
   function route(map, floor, start, goal, occupied = () => false) {
     return OpenTibia.findPath(
       start.x, start.y, goal.x, goal.y,
@@ -198,5 +224,5 @@ const World = (() => {
     return validate(map);
   }
 
-  return { ground, objects, markers, key, index, inside, floorAt, makeFloor, passable, canStep, route, findStart, validate, seed };
+  return { ground, objects, markers, key, index, inside, floorAt, makeFloor, passable, canStep, clearSight, route, findStart, validate, seed };
 })();

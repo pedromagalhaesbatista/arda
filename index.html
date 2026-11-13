@@ -12,6 +12,7 @@
   <script defer src="shire.js"></script>
   <script defer src="art.js"></script>
   <script defer src="equipment.js"></script>
+  <script defer src="magic.js"></script>
   <script defer src="saves.js"></script>
   <script defer src="layout.js"></script>
   <script defer src="game.js"></script>
@@ -42,10 +43,16 @@
           <div class="vitals">
             <div class="vital-label"><span>Health</span><span id="health-value">30 / 30</span></div>
             <div class="meter health"><span id="health-fill"></span></div>
+            <div class="vital-label"><span>Mana</span><span id="mana-value">24 / 24</span></div>
+            <div class="meter mana"><span id="mana-fill"></span></div>
             <div class="vital-label"><span>Experience</span><span id="xp-value">0 / 18</span></div>
             <div class="meter xp"><span id="xp-fill"></span></div>
           </div>
           <div class="skills">
+            <div>
+              <div class="stat"><span>Magic level</span><strong id="magic-level">0</strong></div>
+              <progress id="magic-progress" aria-label="Magic level progress" max="24" value="0"></progress>
+            </div>
             <div>
               <div class="stat"><span>Sword fighting</span><strong id="skill">10</strong></div>
               <progress id="sword-progress" aria-label="Sword fighting progress" max="8" value="0"></progress>
@@ -54,6 +61,14 @@
               <div class="stat"><span>Shielding</span><strong id="shield-skill">10</strong></div>
               <progress id="shield-progress" aria-label="Shielding progress" max="8" value="0"></progress>
             </div>
+          </div>
+        </section>
+        <section class="panel" data-window="training">
+          <div class="panel-heading"><h3><img src="opentibia/ui/skills.png" alt="">Training</h3></div>
+          <p id="training-status" class="panel-note"></p>
+          <div id="training-controls" class="training-controls" role="group" aria-label="Practice skill">
+            <button type="button" data-practice="sword" aria-pressed="false">Sword</button>
+            <button type="button" data-practice="shielding" aria-pressed="false">Shield</button>
           </div>
         </section>
         <section class="panel" data-window="hunt">
@@ -98,8 +113,9 @@
             </div>
           </div>
           <div class="bar-dock" data-bar-edge="bottom"></div>
-          <div id="status-rail" class="status-rail" aria-label="Health and experience">
+          <div id="status-rail" class="status-rail" aria-label="Character vitals">
             <div class="rail-meter rail-health" id="rail-health" role="meter" aria-label="Health" aria-valuemin="0" aria-valuemax="30" aria-valuenow="30"><span></span><b aria-hidden="true">30/30</b></div>
+            <div class="rail-meter rail-mana" id="rail-mana" role="meter" aria-label="Mana" aria-valuemin="0" aria-valuemax="24" aria-valuenow="24"><span></span><b aria-hidden="true">24/24</b></div>
             <div class="rail-meter rail-xp" id="rail-xp" role="meter" aria-label="Experience" aria-valuemin="0" aria-valuemax="18" aria-valuenow="0"><span></span><b aria-hidden="true">0/18</b></div>
           </div>
         </div>
@@ -125,6 +141,10 @@
             </div>
           </div>
           <ol id="journal" role="log"></ol>
+          <form id="spell-console" class="spell-console">
+            <input id="spell-words" type="text" aria-label="Spell words" placeholder="Say a spell…" autocomplete="off" autocapitalize="off" spellcheck="false" maxlength="80">
+            <button type="submit">Cast</button>
+          </form>
         </section>
       </section>
 
@@ -137,6 +157,10 @@
         <section id="battle-panel" class="panel battle" data-window="battle">
           <div class="panel-heading"><h3><img src="opentibia/ui/battle.png" alt="">Battle List</h3><span id="battle-count"></span></div>
           <div id="battle-list"></div>
+        </section>
+        <section class="panel" data-window="spells">
+          <div class="panel-heading"><h3><img src="opentibia/ui/questlog.png" alt="">Spellbook</h3></div>
+          <ul id="spell-list"></ul>
         </section>
       </aside>
       <aside id="right-dock" class="sidebar dock" aria-label="Game panels">

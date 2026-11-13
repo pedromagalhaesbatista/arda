@@ -2,7 +2,7 @@
 
 const root = new URL("./", self.location.href);
 const cachePrefix = `arda:${root.pathname}:`;
-const cacheName = `${cachePrefix}5`;
+const cacheName = `${cachePrefix}6`;
 const files = [
   "index.html",
   "style.css",
@@ -12,6 +12,7 @@ const files = [
   "shire.js",
   "art.js",
   "equipment.js",
+  "magic.js",
   "saves.js",
   "game.js",
   "layout.js",

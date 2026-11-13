@@ -68,6 +68,12 @@
     // Browser settings are optional.
   }
   let combatText = [];
+  let spellEffects = [];
+  const spellRows = new Map();
+  let magicClock = null;
+  let practice = null;
+  let nextPractice = 0;
+  let trainingPoint;
   let inventoryDirty = true;
   let draggedItem = null;
   let nextChase = 0;
@@ -114,13 +120,19 @@
       ...start, hp: 30, maxHp: 30, xp: 0, level: 1, face: OpenTibia.Direction.South,
       kit: Equipment.starterKit(), stance: "balanced", pursuit: "stand",
       sword: { level: 10, tries: 0, goal: 8 }, shielding: { level: 10, tries: 0, goal: 8 },
+      ...Magic.starter(),
     };
+    trainingPoint = start;
+    practice = null;
+    nextPractice = 0;
+    magicClock = null;
     inventoryDirty = true;
     hunt = { start: performance.now(), xp: 0, coins: 0, dealt: 0, received: 0, healing: 0 };
     huntSecond = -1;
     previewFloor = null;
     draggedItem = null;
     combatText = [];
+    spellEffects = [];
     $("backpack-panel").hidden = false;
     entities = [];
     for (const floor of map.floors) {
@@ -153,13 +165,13 @@
     const floor = currentFloor();
     const steppingIntoLink = player.motion && floor.markers[World.key(player.x, player.y)]?.type === "link";
     const position = steppingIntoLink ? player.motion.from : player;
-    const { z, hp, maxHp, xp, level, face, kit, stance, pursuit, sword, shielding } = player;
+    const { z, hp, maxHp, xp, level, face, kit, stance, pursuit, sword, shielding, mana, magic, spellState } = player;
     const creatures = Object.fromEntries(entities.filter(entity => creatureNames[entity.type]).map(entity => {
       const { x, y, z, hp, face } = entity;
       return [Saves.actorKey(entity), { x, y, z, hp, face }];
     }));
     return {
-      version: 1, player: { x: position.x, y: position.y, z, hp, maxHp, xp, level, face, kit, stance, pursuit, sword, shielding },
+      version: 1, player: { x: position.x, y: position.y, z, hp, maxHp, xp, level, face, kit, stance, pursuit, sword, shielding, mana, magic, spellState },
       quest, ratsDefeated, hasLedger, creatures, loot,
     };
   }
@@ -212,6 +224,7 @@
       for (const field of Object.keys(player)) {
         if (Object.hasOwn(data.player, field)) player[field] = data.player[field];
       }
+      if (!Object.hasOwn(data.player, "mana")) Object.assign(player, Magic.starter(player.level));
       const readyAt = performance.now() + Combat.swingInterval;
       for (const entity of entities) {
         if (!creatureNames[entity.type]) continue;
@@ -311,7 +324,7 @@
       $("world-select").value = selectedWorld;
       return;
     }
-    saveProgress();
+    saveProgress(true);
     closeTileMenu();
     held.clear();
     selectedWorld = id;
@@ -471,12 +484,17 @@
 
   function updatePlayPanel() {
     const goal = player.level * 18;
+    const maxMana = Magic.maxMana(player.level);
     $("level").textContent = `Level ${player.level}`;
     $("health-value").textContent = `${player.hp} / ${player.maxHp}`;
     $("health-fill").style.width = `${player.hp / player.maxHp * 100}%`;
+    $("mana-value").textContent = `${player.mana} / ${maxMana}`;
+    $("mana-fill").style.width = `${player.mana / maxMana * 100}%`;
     $("xp-value").textContent = `${player.xp} / ${goal}`;
     $("xp-fill").style.width = `${player.xp / goal * 100}%`;
-    for (const [id, value, max] of [["rail-health", player.hp, player.maxHp], ["rail-xp", player.xp, goal]]) {
+    for (const [id, value, max] of [
+      ["rail-health", player.hp, player.maxHp], ["rail-mana", player.mana, maxMana], ["rail-xp", player.xp, goal],
+    ]) {
       const meter = $(id);
       meter.style.setProperty("--fill", `${value / max * 100}%`);
       meter.setAttribute("aria-valuemax", max);
@@ -486,10 +504,14 @@
     updateBestiary();
     $("skill").textContent = player.sword.level;
     $("shield-skill").textContent = player.shielding.level;
-    for (const [id, skill] of [["sword-progress", player.sword], ["shield-progress", player.shielding]]) {
-      $(id).max = skill.goal;
-      $(id).value = skill.tries;
+    $("magic-level").textContent = player.magic.level;
+    for (const [id, skill] of [["sword-progress", player.sword], ["shield-progress", player.shielding], ["magic-progress", player.magic]]) {
+      const meter = $(id);
+      meter.max = skill.goal;
+      meter.value = skill.tries;
+      meter.title = `${skill.tries} / ${skill.goal} · ${Math.floor(skill.tries / skill.goal * 100)}%`;
     }
+    updateTrainingPanel();
     for (const [id, key] of [["stances", "stance"], ["pursuit", "pursuit"]]) {
       for (const button of $(id).children) {
         button.setAttribute("aria-pressed", String(button.dataset[key] === player[key]));
@@ -791,14 +813,28 @@
     draws.sort((a, b) => a.y - b.y || a.depth - b.depth);
     for (const entry of draws) entry.draw();
     if (floor.z < 0 && !edit) {
-      const light = c.createRadialGradient(canvas.width / 2, canvas.height / 2, tile * 2, canvas.width / 2, canvas.height / 2, tile * 10);
+      const lit = player.spellState.light > 0;
+      const light = c.createRadialGradient(canvas.width / 2, canvas.height / 2, tile * (lit ? 5 : 2),
+        canvas.width / 2, canvas.height / 2, tile * (lit ? 15 : 10));
       light.addColorStop(0, "rgba(25,22,18,0)");
-      light.addColorStop(1, "rgba(15,15,17,.78)");
+      light.addColorStop(1, lit ? "rgba(15,15,17,.55)" : "rgba(15,15,17,.78)");
       c.fillStyle = light;
       c.fillRect(0, 0, canvas.width, canvas.height);
     }
     if (combatText.length) combatText = combatText.filter(label => now - label.start < 880);
     if (!edit) {
+      spellEffects = spellEffects.filter(effect => now - effect.start < 380);
+      for (const effect of spellEffects) {
+        if (effect.z !== floor.z) continue;
+        const progress = (now - effect.start) / 380;
+        c.globalAlpha = 1 - progress;
+        c.strokeStyle = effect.color;
+        c.lineWidth = 2;
+        c.beginPath();
+        c.arc(px(effect.x) + tile / 2, py(effect.y) + tile / 2, 5 + progress * tile / 2, 0, Math.PI * 2);
+        c.stroke();
+      }
+      c.globalAlpha = 1;
       c.font = "bold 12px system-ui";
       c.textAlign = "center";
       c.lineWidth = 2;
@@ -862,6 +898,7 @@
     const x = player.x + dx;
     const y = player.y + dy;
     if (!World.canStep(map, currentFloor(), player.x, player.y, x, y, (nx, ny) => Boolean(here(nx, ny)))) return false;
+    stopPractice();
     const interval = OpenTibia.WALK_DURATION_MS * (dx && dy ? 1.5 : 1);
     moveActor(player, x, y, now, interval - 15);
     if (openLoot && distance(player, openLoot) > 1) closeLoot();
@@ -1136,6 +1173,7 @@
   }
 
   function selectTarget(entity) {
+    stopPractice();
     target = entity === target ? null : entity;
     path = [];
     pendingInteraction = null;
@@ -1151,6 +1189,7 @@
 
   function stopActions() {
     closeTileMenu();
+    stopPractice();
     target = null;
     path = [];
     pendingInteraction = null;
@@ -1158,9 +1197,162 @@
     needsRefresh = true;
   }
 
+  function canPractice() {
+    return player.z === trainingPoint.z && distance(player, trainingPoint) <= 1 &&
+      !entities.some(entity => creatureNames[entity.type] && entity.hp > 0 && entity.z === player.z && distance(player, entity) <= 4);
+  }
+
+  function updateTrainingPanel() {
+    const available = canPractice();
+    $("training-status").textContent = practice ? "Practising every 2s · Esc to stop" :
+      available ? "Practise at the starting point." : "Return to the starting point away from enemies.";
+    for (const button of $("training-controls").children) {
+      const skill = button.dataset.practice;
+      const gear = skill === "sword" ? "weapon" : "shield";
+      button.disabled = !available || !player.kit.worn[gear];
+      button.title = player.kit.worn[gear] ? "" : `Equip a ${gear} to practise`;
+      button.setAttribute("aria-pressed", String(practice === skill));
+    }
+  }
+
+  function stopPractice() {
+    if (!practice) return;
+    practice = null;
+    needsRefresh = true;
+  }
+
+  function trainSkill(skill, label) {
+    if (Combat.train(player[skill])) journal(`You advanced to ${label} level ${player[skill].level}.`);
+  }
+
+  function practise(now) {
+    if (!practice) return;
+    const sword = practice === "sword";
+    if (!canPractice() || !player.kit.worn[sword ? "weapon" : "shield"]) return stopPractice();
+    if (now < nextPractice) return;
+    nextPractice = now + Combat.swingInterval;
+    const successful = sword ? Combat.attack(player) > 0 : Combat.mitigate(player, Combat.roll(2, 4), false).blocked;
+    if (successful) trainSkill(practice, sword ? "sword fighting" : "shielding");
+    showCombatText(player, successful ? (sword ? "Practice hit" : "Practice block") : "Try again", "#e3d0a1", now);
+    needsRefresh = true;
+  }
+
+  function spellIcon(spell) {
+    const icon = document.createElement("span");
+    icon.className = "spell-icon";
+    icon.textContent = spell.icon;
+    icon.setAttribute("aria-hidden", "true");
+    return icon;
+  }
+
+  function buildSpellbook() {
+    for (const [id, spell] of Object.entries(Magic.spells)) {
+      const entry = document.createElement("li");
+      entry.className = "spell-entry";
+      entry.dataset.spellGroup = spell.group;
+      const button = document.createElement("button");
+      button.type = "button";
+      button.draggable = true;
+      button.setAttribute("aria-label", `Cast ${spell.name}`);
+      button.title = "Click to cast or drag to an action slot";
+      button.append(spellIcon(spell));
+      button.addEventListener("click", () => castSpell(id));
+      button.addEventListener("dragstart", event => {
+        draggedItem = { id, origin: "spellbook" };
+        event.dataTransfer.setData("text/plain", id);
+        event.dataTransfer.effectAllowed = "copy";
+      });
+      button.addEventListener("dragend", clearInventoryDrag);
+      const info = document.createElement("span");
+      info.className = "spell-info";
+      const name = document.createElement("strong");
+      name.textContent = spell.name;
+      const words = document.createElement("code");
+      words.textContent = spell.words;
+      const status = document.createElement("small");
+      info.append(name, words, status);
+      entry.append(button, info);
+      $("spell-list").append(entry);
+      spellRows.set(id, status);
+    }
+  }
+
+  function updateSpellStatus() {
+    for (const [id, status] of spellRows) {
+      const spell = Magic.spells[id];
+      const seconds = Math.ceil(Magic.remaining(player, id) / 1000);
+      let label = spell.range ? `Range ${spell.range}` : spell.group === "support" ? "45s light" : "Self heal";
+      if (player.level < spell.level) label = `Level ${spell.level}`;
+      else if (seconds) label = `${seconds}s cooldown`;
+      else if (id === "light" && player.spellState.light) label = `${Math.ceil(player.spellState.light / 1000)}s active`;
+      const value = `${spell.mana} mana · ${label}`;
+      if (status.textContent !== value) status.textContent = value;
+    }
+    for (const button of document.querySelectorAll("[data-spell-action]")) {
+      const seconds = Math.ceil(Magic.remaining(player, button.dataset.spellAction) / 1000);
+      const text = seconds ? `${seconds}s` : "";
+      if (text && button.dataset.cooldown !== text) button.dataset.cooldown = text;
+      if (!text && button.hasAttribute("data-cooldown")) button.removeAttribute("data-cooldown");
+    }
+  }
+
+  function advanceMagic(now, flush = false) {
+    if (document.hidden) return;
+    const time = Math.floor(now);
+    magicClock ??= time;
+    const elapsed = time - magicClock;
+    if (elapsed < (flush ? 1 : 100)) return;
+    magicClock = time;
+    // The frame loop stops while hidden. A long stall also pauses play timers.
+    if (Magic.tick(player, Math.min(elapsed, 250))) needsRefresh = true;
+    updateSpellStatus();
+  }
+
+  function castSpell(id) {
+    if (edit) return;
+    const spell = Magic.spells[id];
+    const now = performance.now();
+    advanceMagic(now, true);
+    if (player.level < spell.level) return journal(`${spell.name} requires level ${spell.level}.`, "combat");
+    if (Magic.remaining(player, id)) return journal("You are exhausted.", "combat");
+    if (player.mana < spell.mana) return journal("You do not have enough mana.", "combat");
+    if (spell.range) {
+      if (!target || target.z !== player.z || target.hp <= 0 || distance(player, target) > spell.range) {
+        return journal(`Select a target within ${spell.range} tiles.`, "combat");
+      }
+      if (!World.clearSight(currentFloor(), player, target)) return journal("Your target is out of sight.", "combat");
+    } else if (spell.group === "healing" && player.hp === player.maxHp) {
+      return journal("You are already at full health.", "combat");
+    }
+
+    stopPractice();
+    const power = player.magic.level + Math.floor(player.level / 2);
+    const advanced = Magic.spend(player, id);
+    journal(`You say: ${spell.words}`, "combat");
+    showSpellEffect(player, "#a5caff", now);
+    if (spell.group === "healing") {
+      const restored = Math.min(player.maxHp - player.hp, Combat.roll(7, 10) + power);
+      player.hp += restored;
+      hunt.healing += restored;
+      showCombatText(player, `+${restored}`, "#a9e2b0", now);
+      journal(`You recover ${restored} health.`, "combat");
+    } else if (spell.group === "attack") {
+      const damage = (id === "buzz" ? Combat.roll(3, 5) : Combat.roll(7, 10)) + power;
+      showSpellEffect(target, "#82a9ff", now);
+      hitTarget(damage, now, spell.name);
+    } else {
+      player.spellState.light = Magic.lightDuration;
+      showCombatText(player, spell.name, "#f8d990", now);
+      journal("A light surrounds you for 45 seconds.", "combat");
+    }
+    if (advanced) journal(`You advanced to magic level ${player.magic.level}.`);
+    updateSpellStatus();
+    needsRefresh = true;
+  }
+
   function validAction(id) {
-    return id === null || ["attack", "use", "stop"].includes(id) ||
-      (Object.hasOwn(Equipment.items, id) && id !== "pack" && id !== "coin");
+    return id === null || (typeof id === "string" && (["attack", "use", "stop"].includes(id) ||
+      Object.hasOwn(Magic.spells, id) || (Object.hasOwn(Equipment.items, id) && id !== "pack" && id !== "coin")));
   }
 
   function setAction(index, id) {
@@ -1177,6 +1369,7 @@
     else if (id === "use") interact();
     else if (id === "stop") stopActions();
     else if (id === "herb") heal();
+    else if (Object.hasOwn(Magic.spells, id)) castSpell(id);
     else if (id) {
       const slot = Equipment.items[id].slot;
       if (player.kit.worn[slot] === id) stowItem(slot);
@@ -1195,15 +1388,20 @@
       const button = document.createElement("button");
       button.type = "button";
       const hotkey = `F${index + 1}`;
-      const label = ({ attack: "Attack", use: "Use nearby", stop: "Stop", herb: "Use healing herb" })[id] ??
+      const spell = Magic.spells[id];
+      const label = spell?.name ?? ({ attack: "Attack", use: "Use nearby", stop: "Stop", herb: "Use healing herb" })[id] ??
         (id ? Equipment.items[id].name : "Empty");
       button.dataset.actionIndex = index;
-      button.title = id ? `${label} (${hotkey})` : `${hotkey} · Drag an item here`;
+      button.title = id ? `${label} (${hotkey})` : `${hotkey} · Drag an item or spell here`;
       button.setAttribute("aria-label", `${hotkey} ${label}`);
       const key = document.createElement("kbd");
       key.textContent = hotkey;
       button.append(key);
-      if (id && !["use", "stop"].includes(id)) {
+      if (spell) {
+        button.dataset.spellAction = id;
+        button.dataset.spellGroup = spell.group;
+        button.append(spellIcon(spell));
+      } else if (id && !["use", "stop"].includes(id)) {
         button.append(thumbnail(context => Art.icon(context, id === "attack" ? "sword" : id)));
       } else {
         const icon = document.createElement("span");
@@ -1223,16 +1421,24 @@
       });
       button.addEventListener("contextmenu", event => {
         event.preventDefault();
-        const presets = [["Attack", "attack"], ["Use healing herb", "herb"], ["Use nearby", "use"], ["Stop", "stop"], ["Clear slot", null]];
+        const presets = [
+          ["Attack", "attack"], ["Use healing herb", "herb"], ["Use nearby", "use"], ["Stop", "stop"],
+          ...Object.entries(Magic.spells).map(([key, spell]) => [spell.name, key]), ["Clear slot", null],
+        ];
         showMenu(event, presets.map(([name, action]) => [name, () => setAction(index, action)]));
       });
       (index < 6 ? left : right).append(button);
       if (String(index) === focused) button.focus({ preventScroll: true });
     });
+    updateSpellStatus();
   }
 
   function showCombatText(actor, text, color, now) {
     combatText.push({ x: actor.x, y: actor.y, z: actor.z, text, color, start: now });
+  }
+
+  function showSpellEffect(actor, color, now) {
+    spellEffects.push({ x: actor.x, y: actor.y, z: actor.z, color, start: now });
   }
 
   function canStrike(actor, defender) {
@@ -1244,15 +1450,19 @@
     if (!target || now < nextAttack || !canStrike(player, target)) return;
     nextAttack = now + Combat.swingInterval;
     player.face = OpenTibia.directionFromStepDelta(target.x - player.x, target.y - player.y, player.face);
-    const damage = Math.min(target.hp, Combat.attack(player));
-    if (player.kit.worn.weapon && damage > 0 && Combat.train(player.sword)) {
-      journal(`You advanced to sword fighting level ${player.sword.level}.`);
-    }
+    const damage = Combat.attack(player);
+    if (player.kit.worn.weapon && damage > 0) trainSkill("sword", "sword fighting");
+    hitTarget(damage, now);
+  }
+
+  function hitTarget(power, now, spellName) {
+    const damage = Math.min(target.hp, power);
     const name = creatureNames[target.type];
     target.hp -= damage;
     hunt.dealt += damage;
-    showCombatText(target, damage || "Miss", damage ? "#ff8e70" : "#f3d9a7", now);
-    journal(damage ? `You hit the ${name.toLowerCase()} for ${damage}.` : `You miss the ${name.toLowerCase()}.`, "combat");
+    showCombatText(target, damage || "Miss", spellName ? "#aac6ff" : damage ? "#ff8e70" : "#f3d9a7", now);
+    const verb = spellName ? `${spellName} hits` : "You hit";
+    journal(damage ? `${verb} the ${name.toLowerCase()} for ${damage}.` : `You miss the ${name.toLowerCase()}.`, "combat");
     if (target.hp === 0) {
       if (target.type === "rat") ratsDefeated++;
       const xp = target.type === "rat" ? 9 : 14;
@@ -1270,9 +1480,11 @@
       hunt.xp += xp;
       if (player.xp >= player.level * 18) {
         player.xp -= player.level * 18;
+        const previousMana = Magic.maxMana(player.level);
         player.level++;
         player.maxHp += 5;
         player.hp = player.maxHp;
+        player.mana += Magic.maxMana(player.level) - previousMana;
         journal(`You reached level ${player.level}.`);
       }
       target = null;
@@ -1302,6 +1514,7 @@
       const range = distance(player, entity);
       const inReach = canStrike(entity, player);
       if (inReach && now >= entity.nextHit) {
+        stopPractice();
         entity.nextHit = now + Combat.swingInterval;
         const incoming = Combat.roll(1, entity.type === "rat" ? 7 : 13);
         const result = Combat.mitigate(player, incoming, now < nextAttack);
@@ -1309,9 +1522,7 @@
         player.hp -= damage;
         hunt.received += damage;
         const name = creatureNames[entity.type].toLowerCase();
-        if (result.blocked && player.kit.worn.shield && Combat.train(player.shielding)) {
-          journal(`You advanced to shielding level ${player.shielding.level}.`);
-        }
+        if (result.blocked && player.kit.worn.shield) trainSkill("shielding", "shielding");
         showCombatText(player, damage || "Block", damage ? "#ff887b" : "#e3d0a1", now);
         if (damage) journal(`The ${name} hits you for ${damage}.`, "combat");
         else if (result.blocked) journal(`You block the ${name}'s attack.`, "combat");
@@ -1343,6 +1554,7 @@
   }
 
   function updateGame(now) {
+    advanceMagic(now);
     if (player.motion && now >= player.motion.end) {
       player.motion = null;
       savePending = true;
@@ -1381,6 +1593,7 @@
       }
     }
     hit(now);
+    practise(now);
     if (now - lastTick >= 105) {
       enemies(now);
       lastTick = now;
@@ -1541,7 +1754,8 @@
     closeLoot();
     held.clear();
     if (enable) {
-      saveProgress();
+      stopPractice();
+      saveProgress(true);
       editFloor = player.z;
       editorCenter = { x: player.x, y: player.y };
       syncEditor();
@@ -1555,6 +1769,7 @@
       }
     }
     edit = enable;
+    magicClock = null;
     if (!edit) {
       const state = resumePlay();
       if (state !== "continued") announcePlay(state);
@@ -1623,11 +1838,35 @@
   $("export-save").addEventListener("click", exportCharacter);
   $("import-save").addEventListener("click", () => $("character-file").click());
   $("character-file").addEventListener("change", importCharacter);
-  window.addEventListener("pagehide", () => saveProgress());
+  window.addEventListener("pagehide", () => saveProgress(true));
   document.addEventListener("visibilitychange", () => {
-    if (document.visibilityState === "hidden") saveProgress();
+    magicClock = null;
+    if (document.hidden) saveProgress(true);
   });
 
+  $("training-controls").addEventListener("click", event => {
+    const skill = event.target.dataset.practice;
+    if (edit || !skill || event.target.disabled) return;
+    if (practice === skill) stopPractice();
+    else {
+      stopActions();
+      practice = skill;
+      nextPractice = performance.now() + Combat.swingInterval;
+    }
+    canvas.focus({ preventScroll: true });
+  });
+  $("spell-console").addEventListener("submit", event => {
+    event.preventDefault();
+    if (edit) return;
+    const input = $("spell-words");
+    const words = input.value.trim().toLowerCase().replace(/\s+/g, " ");
+    if (!words) return;
+    const id = Object.keys(Magic.spells).find(id => Magic.spells[id].words === words);
+    if (id) castSpell(id);
+    else journal("Those words are not in your spellbook.", "combat");
+    input.value = "";
+    canvas.focus({ preventScroll: true });
+  });
   $("play").addEventListener("click", () => switchMode(false));
   $("edit").addEventListener("click", () => switchMode(true));
   $("floors").addEventListener("change", event => { editFloor = Number(event.target.value); needsRefresh = true; });
@@ -1890,6 +2129,11 @@
       return;
     }
     if (event.repeat) return;
+    if (key === "enter" && event.target === canvas) {
+      event.preventDefault();
+      $("spell-words").focus();
+      return;
+    }
     if (key === "e") interact();
     if (key === "1") attackKey();
     if (key === "2") heal();
@@ -1901,7 +2145,7 @@
   new ResizeObserver(resize).observe(canvas);
 
   function frame(now) {
-    if (!edit) {
+    if (!edit && !document.hidden) {
       updateGame(now);
       if (needsRefresh || Math.floor((now - hunt.start) / 1000) !== huntSecond) updateHunt(now);
       if (needsRefresh) savePending = true;
@@ -1914,6 +2158,7 @@
 
   syncWorldSelect();
   updateMouseHint();
+  buildSpellbook();
   const initial = resumePlay();
   resize();
   if (loadMessage) journal(loadMessage);

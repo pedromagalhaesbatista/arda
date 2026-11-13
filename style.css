@@ -334,10 +334,10 @@ h1 { font: bold 14px Arial, sans-serif; }
 .game-heading h2 { font: bold 11px Arial, sans-serif; }
 .view-tools button { min-width: 17px; height: 16px; padding: 0 3px; border-radius: 0; line-height: 1; }
 .game-panel { display: flex; flex-direction: column; border-radius: 0; border-color: #707070; min-width: 0; }
-.game-screen { display: grid; grid-template-columns: var(--bar-left, 0px) minmax(0, 1fr) var(--bar-right, 0px) 26px;
+.game-screen { display: grid; grid-template-columns: var(--bar-left, 0px) minmax(0, 1fr) var(--bar-right, 0px) 35px;
   grid-template-areas: "top top top top" "bar-left map bar-right rail" "bottom bottom bottom bottom";
   grid-template-rows: auto auto auto; min-width: 0; background: #444 url("opentibia/ui/panel_side.png") center / 100% 100%; gap: 2px; padding: 2px; }
-.viewport { height: clamp(260px, calc(100dvh - 94px - var(--console-height, 81px) - var(--bar-top, 0px) - var(--bar-bottom, 0px)), 1200px); border: 1px solid #777; box-shadow: 0 0 0 1px #181818; }
+.viewport { height: clamp(260px, calc(100dvh - 116px - var(--console-height, 81px) - var(--bar-top, 0px) - var(--bar-bottom, 0px)), 1200px); border: 1px solid #777; box-shadow: 0 0 0 1px #181818; }
 .action-bar { display: flex; flex-direction: column; gap: 1px; padding: 0; overflow: auto; border: 0; }
 .action-bar button { flex: 0 0 32px; width: 32px; height: 32px; }
 .action-bar button, .slot, .slot.empty { border-radius: 0; background: #3c3c3c url("opentibia/ui/item.png") center / 100% 100%; box-shadow: none; border: 1px solid #646464; }
@@ -348,6 +348,37 @@ h1 { font: bold 14px Arial, sans-serif; }
 .rail-meter { flex: 1; position: relative; border: 1px solid #777; background: #171717; overflow: hidden; }
 .rail-meter > span { position: absolute; inset: auto 0 0; height: var(--fill, 0%); background: linear-gradient(90deg, #22642a, #73c64d); }
 .rail-xp > span { background: linear-gradient(90deg, #8b6622, #e2bc54); }
+.rail-mana > span { background: linear-gradient(90deg, #234892, #5ba9ff); }
+.mana span { background: #4b91e5; }
+#magic-progress::-webkit-progress-value { background: #9278d0; }
+#magic-progress::-moz-progress-bar { background: #9278d0; }
+.training-controls { display: flex; gap: 3px; padding: 0 4px 4px; }
+.training-controls button { flex: 1; padding: 2px; font-size: 11px; }
+.training-controls button[aria-pressed="true"] { border-color: #dbbe83; color: #ffdb9a; }
+#spell-list { display: grid; gap: 1px; list-style: none; padding: 2px; margin: 0; }
+.spell-entry {
+  display: grid; grid-template-columns: 22px minmax(0, 1fr); gap: 4px; align-items: center;
+  border-bottom: 1px solid #626262; padding: 3px 1px;
+}
+.spell-entry button { width: 22px; height: 24px; padding: 0; border-radius: 0; background: #30353b; }
+.spell-info { display: grid; gap: 1px; min-width: 0; }
+.spell-info strong { font-size: 11px; }
+.spell-info code, .spell-info small { font-size: 10px; overflow-wrap: anywhere; }
+.spell-info code { color: #c7cddd; }
+.spell-icon { color: #dce8ff; text-shadow: 0 0 3px #83a0f9; font: bold 17px/1 Arial, sans-serif; }
+[data-spell-group="healing"] .spell-icon { color: #a9e2b0; text-shadow: 0 0 3px #60956c; }
+[data-spell-group="support"] .spell-icon { color: #f8d990; text-shadow: 0 0 3px #a98e53; }
+.action-bar button[data-cooldown]::after {
+  content: attr(data-cooldown); position: absolute; inset: 0; display: grid; place-items: center;
+  background: #191b24b5; color: white; font-size: 11px;
+}
+.spell-console { display: flex; gap: 2px; margin-top: 2px; }
+.spell-console input {
+  flex: 1; min-width: 0; padding: 2px 5px; border: 1px solid #646464; border-radius: 0;
+  background: #303030; color: #e4e3df; font: inherit;
+}
+.spell-console button { font-size: 10px; padding: 2px 6px; border-radius: 0; }
+.client[data-editing] .spell-console { display: none; }
 .rail-meter b { position: absolute; inset: 0; display: grid; place-items: center; writing-mode: vertical-rl; font-size: 9px; color: white; text-shadow: 1px 1px #222; }
 .controls { background: #3d3d3d; min-height: 20px; padding: 2px 5px; gap: 5px; font-size: 10px; }
 .journal { flex: 1; background: #444 url("opentibia/ui/panel_content.png") center / 100% 100%; padding: 0 2px 2px; }
@@ -502,7 +533,7 @@ h1 { font: bold 14px Arial, sans-serif; }
 }
 @media (max-width: 760px) {
   .game-screen {
-    grid-template-columns: minmax(0, 1fr) 21px;
+    grid-template-columns: minmax(0, 1fr) 33px;
     grid-template-areas: "top top" "map rail" "bar-left bar-left" "bar-right bar-right" "bottom bottom";
   }
   .bar-dock { flex-direction: column; }

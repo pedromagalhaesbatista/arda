@@ -34,8 +34,21 @@ const Saves = (() => {
       Object.entries(kit.bag).every(([id, count]) => id !== "pack" && Object.hasOwn(Equipment.items, id) && integer(count, 1));
   }
 
-  function skillValid(skill) {
-    return record(skill) && integer(skill.level, 10) && integer(skill.goal, 1) && integer(skill.tries, 0, skill.goal - 1);
+  function skillValid(skill, minimum = 10) {
+    return record(skill) && integer(skill.level, minimum) && integer(skill.goal, 1) && integer(skill.tries, 0, skill.goal - 1);
+  }
+
+  function magicValid(player) {
+    if (!["mana", "magic", "spellState"].some(field => Object.hasOwn(player, field))) return true;
+    const { mana, magic, spellState } = player;
+    if (!integer(mana, 0, Magic.maxMana(player.level)) || !skillValid(magic, 0) || !record(spellState) ||
+        !integer(spellState.light, 0, Magic.lightDuration) || !integer(spellState.regen, 0, Magic.manaInterval - 1) ||
+        !record(spellState.cooldowns)) return false;
+    return Object.entries(spellState.cooldowns).every(([id, time]) => {
+      const limit = Object.hasOwn(Magic.spells, id) ? Magic.spells[id].cooldown :
+        Object.hasOwn(Magic.groups, id) ? Magic.groups[id] : 0;
+      return integer(time, 1, limit);
+    });
   }
 
   function valid(value, map, entities) {
@@ -45,7 +58,7 @@ const Saves = (() => {
         !integer(player.hp, 1, player.maxHp) || !integer(player.xp, 0, player.level * 18 - 1) ||
         !integer(player.face, 0, 3) || !["offensive", "balanced", "defensive"].includes(player.stance) ||
         !["stand", "chase"].includes(player.pursuit) || !kitValid(player.kit) ||
-        !skillValid(player.sword) || !skillValid(player.shielding)) return false;
+        !skillValid(player.sword) || !skillValid(player.shielding) || !magicValid(player)) return false;
     if (!["available", "active", "complete"].includes(quest) || !integer(ratsDefeated, 0) || typeof hasLedger !== "boolean") return false;
     if (!record(creatures) || Object.keys(creatures).length !== entities.length) return false;
     for (const entity of entities) {

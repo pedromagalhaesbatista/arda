@@ -312,6 +312,35 @@ h1 { font: bold 14px Arial, sans-serif; }
 .brand-mark { width: 15px; height: 15px; font-size: 10px; }
 .modes, .modes button, .world-controls select { border-radius: 1px; }
 .modes button, .world-controls select { padding: 2px 5px; }
+#character-select { padding: 2px 5px; font-size: 11px; border-radius: 1px; }
+#active-character { color: #e4ca92; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 16ch; }
+#character-screen {
+  box-sizing: border-box; width: min(420px, calc(100% - 20px)); max-height: calc(100dvh - 20px);
+  margin: auto; padding: 0; color: #e4e3df; box-shadow: 0 12px 45px #000b;
+}
+#character-screen::backdrop { background: #111b; }
+#close-characters { padding: 0 5px; line-height: 1.2; border-radius: 0; }
+.character-screen-body { padding: 12px; }
+.character-screen-body h2 { font: bold 16px Arial, sans-serif; margin: 0 0 7px; color: #f1dcac; }
+#character-list { list-style: none; display: grid; gap: 3px; margin: 0; padding: 0; max-height: 34vh; overflow: auto; }
+#character-list button {
+  width: 100%; display: flex; gap: 4px 12px; flex-wrap: wrap; justify-content: space-between;
+  padding: 7px 8px; border-radius: 0; text-align: left; overflow-wrap: anywhere;
+}
+#character-list [aria-current] { border-color: #c4a971; color: #f0dbac; }
+#character-list button span { color: #d3d0c7; }
+#new-character-form { display: grid; gap: 6px; margin-top: 12px; padding-top: 8px; border-top: 1px solid #777; }
+#new-character-form h3 { margin: 0; font-size: 12px; }
+.character-fields { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 7px; }
+.character-fields > div { display: grid; gap: 3px; min-width: 0; }
+.character-fields input, .character-fields select {
+  box-sizing: border-box; width: 100%; min-width: 0; padding: 5px;
+  font: inherit; color: #e4e3df; background: #303030; border: 1px solid #777;
+}
+#new-character-form button { justify-self: start; padding: 4px 8px; border-radius: 1px; }
+#new-character-details, #character-error { margin: 0; }
+#new-character-details:empty, #character-error:empty { display: none; }
+#character-error { margin-top: 7px; color: #ffc3b0; }
 .layout {
   grid-template-columns: min(var(--dock-left, 154px), 22vw) minmax(0, 1fr) min(var(--dock-tracking, 154px), 22vw) min(var(--dock-right, 178px), 22vw);
   grid-template-areas: "left game tracking right";

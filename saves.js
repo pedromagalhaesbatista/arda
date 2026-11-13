@@ -4,6 +4,10 @@ const Saves = (() => {
   const mapKey = "arda.world.v1";
   const selectionKey = "arda.world.selected";
   const progressPrefix = "arda.character.v1.";
+  const characterSelectionPrefix = "arda.character.selected.";
+  const originalCharacter = "original";
+  const defaultName = "Adventurer";
+  const nameLimit = 24;
   const integer = (value, min, max = Number.MAX_SAFE_INTEGER) => Number.isSafeInteger(value) && value >= min && value <= max;
   const record = value => value && typeof value === "object" && !Array.isArray(value);
 
@@ -19,8 +23,52 @@ const Saves = (() => {
     return hash.toString(16);
   }
 
-  const progressKey = (world, revision) => `${progressPrefix}${world}.${revision}`;
+  const progressKey = (world, revision, id = originalCharacter) =>
+    `${progressPrefix}${world}.${revision}${id === originalCharacter ? "" : `.${id}`}`;
+  const characterSelectionKey = (world, revision) => `${characterSelectionPrefix}${world}.${revision}`;
+  const characterIdValid = id => id === originalCharacter || /^[0-9a-f]{32}$/.test(id ?? "");
+  const nameValid = name => typeof name === "string" && name === name.trim() &&
+    name.length >= 1 && name.length <= nameLimit && !/[\u0000-\u001f\u007f]/.test(name);
+  const validAction = id => id === null || (typeof id === "string" && (["attack", "use", "stop"].includes(id) ||
+    Object.hasOwn(Magic.spells, id) || (Object.hasOwn(Equipment.items, id) && id !== "pack" && id !== "coin")));
+  const actionsValid = actions => Array.isArray(actions) && [8, 12].includes(actions.length) && actions.every(validAction);
   const actorKey = actor => `${actor.z}:${actor.origin.x},${actor.origin.y}:${actor.type}`;
+
+  function newCharacterId() {
+    return Array.from(crypto.getRandomValues(new Uint8Array(16)), byte => byte.toString(16).padStart(2, "0")).join("");
+  }
+
+  function selectedCharacter(world, revision) {
+    const id = localStorage.getItem(characterSelectionKey(world, revision));
+    return characterIdValid(id) && localStorage.getItem(progressKey(world, revision, id)) !== null ? id : originalCharacter;
+  }
+
+  function selectCharacter(world, revision, id) {
+    localStorage.setItem(characterSelectionKey(world, revision), id);
+  }
+
+  function listCharacters(world, revision) {
+    const originalKey = progressKey(world, revision);
+    const prefix = `${originalKey}.`;
+    const ids = [originalCharacter];
+    for (const key of Object.keys(localStorage)) {
+      if (!key.startsWith(prefix)) continue;
+      const id = key.slice(prefix.length);
+      if (id !== originalCharacter && characterIdValid(id)) ids.push(id);
+    }
+    return ids.map(id => {
+      let data;
+      try {
+        data = JSON.parse(localStorage.getItem(progressKey(world, revision, id)));
+      } catch {
+        // An unreadable slot remains visible in the roster.
+      }
+      const name = nameValid(data?.name) ? data.name : id === originalCharacter ? defaultName : "Unnamed character";
+      const vocation = Vocations.get(data?.player?.vocation).name;
+      const level = integer(data?.player?.level, 1) ? data.player.level : null;
+      return { id, name, vocation, level };
+    });
+  }
 
   function position(map, point) {
     if (!record(point) || !integer(point.x, 0, map.width - 1) || !integer(point.y, 0, map.height - 1)) return false;
@@ -54,6 +102,8 @@ const Saves = (() => {
 
   function valid(value, map, entities) {
     if (!record(value) || value.version !== 1 || !record(value.player)) return false;
+    if (Object.hasOwn(value, "name") && !nameValid(value.name)) return false;
+    if (Object.hasOwn(value, "actions") && !actionsValid(value.actions)) return false;
     const { player, quest, ratsDefeated, hasLedger, creatures, loot } = value;
     if (player.vocation != null && (typeof player.vocation !== "string" || !Object.hasOwn(Vocations.classes, player.vocation) ||
         !skillValid(player.fist) || !skillValid(player.distance))) return false;
@@ -132,5 +182,8 @@ const Saves = (() => {
     return raw;
   }
 
-  return { mapKey, selectionKey, revision, progressKey, actorKey, valid, relocate, read, write };
+  return {
+    mapKey, selectionKey, originalCharacter, defaultName, nameLimit, nameValid, validAction, actionsValid,
+    revision, progressKey, newCharacterId, selectedCharacter, selectCharacter, listCharacters, actorKey, valid, relocate, read, write,
+  };
 })();

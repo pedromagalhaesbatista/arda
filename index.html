@@ -25,6 +25,7 @@
       <div class="world-controls">
         <label for="world-select">World</label>
         <select id="world-select"></select>
+        <button id="character-select" type="button" aria-haspopup="dialog">Characters</button>
         <select id="mouse-mode" aria-label="Mouse controls">
           <option value="context">Context controls</option>
           <option value="classic">Classic controls</option>
@@ -111,7 +112,7 @@
       </aside>
       <section class="game-panel" aria-label="Game">
         <div class="game-heading">
-          <div><h2 id="region">Bree</h2><span id="floor-name">Surface</span></div>
+          <div><h2 id="region">Bree</h2><span id="floor-name">Surface</span><span id="active-character"></span></div>
           <div class="view-tools">
             <span id="coords">—</span>
             <button id="view-zoom-out" aria-label="Zoom game out" title="Zoom game out (Ctrl + −)">−</button>
@@ -261,5 +262,33 @@
       </aside>
     </div>
   </main>
+  <dialog id="character-screen" aria-labelledby="character-screen-title" class="panel">
+    <header class="panel-heading">
+      <h3 id="character-screen-title"><img src="opentibia/ui/skills.png" alt="">Characters</h3>
+      <button id="close-characters" type="button" aria-label="Close character selection" autofocus>×</button>
+    </header>
+    <div class="character-screen-body">
+      <h2 id="character-world"></h2>
+      <ul id="character-list" aria-label="Saved characters"></ul>
+      <form id="new-character-form">
+        <h3>New character</h3>
+        <div class="character-fields">
+          <div>
+            <label for="new-character-name">Name</label>
+            <input id="new-character-name" required maxlength="24" autocomplete="off">
+          </div>
+          <div>
+            <label for="new-character-vocation">Vocation</label>
+            <select id="new-character-vocation" required aria-describedby="new-character-details">
+              <option value="" selected>Choose a vocation</option>
+            </select>
+          </div>
+        </div>
+        <p id="new-character-details"></p>
+        <button type="submit">Create and play</button>
+      </form>
+      <p id="character-error" role="alert"></p>
+    </div>
+  </dialog>
 </body>
 </html>

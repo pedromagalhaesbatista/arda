@@ -44,7 +44,10 @@
     loadMessage = "The saved editor map could not be loaded.";
   }
   let map = structuredClone(worlds[selectedWorld]);
+  let playWorld = null;
   let playRevision = null;
+  let activeCharacter = Saves.originalCharacter;
+  let characterName = Saves.defaultName;
   let saveKey = null;
   let saveRaw = null;
   let saveBlocked = false;
@@ -64,13 +67,13 @@
   let hunt;
   let huntSecond = -1;
   let mouseMode = "context";
-  let actions = ["attack", "herb", "use", "stop", null, null, null, null, null, null, null, null];
+  const defaultActions = ["attack", "herb", "use", "stop", null, null, null, null, null, null, null, null];
+  let legacyActions = defaultActions;
+  let actions = [...defaultActions];
   try {
     if (localStorage.getItem("arda.mouse.v1") === "classic") mouseMode = "classic";
     const savedActions = JSON.parse(localStorage.getItem("arda.actions.v1"));
-    if (Array.isArray(savedActions) && [8, 12].includes(savedActions.length) && savedActions.every(validAction)) {
-      actions.splice(0, savedActions.length, ...savedActions);
-    }
+    if (Saves.actionsValid(savedActions)) legacyActions = savedActions;
   } catch {
     // Browser settings are optional.
   }
@@ -121,16 +124,21 @@
     list.scrollTop = list.scrollHeight;
   }
 
-  function resetPlay() {
-    const start = World.findStart(map);
-    player = {
-      ...start, hp: 30, maxHp: 30, xp: 0, level: 1, face: OpenTibia.Direction.South,
+  function startingPlayer(vocation = null) {
+    const character = {
+      ...World.findStart(map), hp: 30, maxHp: 30, xp: 0, level: 1, face: OpenTibia.Direction.South,
       kit: Equipment.starterKit(), stance: "balanced", pursuit: "stand",
       vocation: null, sword: Vocations.starterSkill(), shielding: Vocations.starterSkill(),
       distance: Vocations.starterSkill(), fist: Vocations.starterSkill(),
       ...Magic.starter(),
     };
-    trainingPoint = start;
+    applyVocation(character, vocation);
+    return character;
+  }
+
+  function resetPlay() {
+    player = startingPlayer();
+    trainingPoint = { x: player.x, y: player.y, z: player.z };
     practice = null;
     nextPractice = 0;
     magicClock = null;
@@ -139,6 +147,10 @@
     huntSecond = -1;
     previewFloor = null;
     draggedItem = null;
+    $("spell-words").value = "";
+    $("vocation-chooser").open = false;
+    $("vocation-select").value = "";
+    updateVocationPreview();
     combatText = [];
     spellEffects = [];
     $("backpack-panel").hidden = false;
@@ -154,6 +166,7 @@
     loot = [];
     closeLoot();
     nextHeal = 0;
+    lastTick = 0;
     target = null;
     path = [];
     pendingInteraction = null;
@@ -169,46 +182,73 @@
     if (element.textContent !== message) element.textContent = message;
   }
 
+  function creatureSnapshot(atSpawn = false) {
+    return Object.fromEntries(entities.filter(entity => creatureNames[entity.type]).map(entity => {
+      const { x, y } = atSpawn ? entity.origin : entity;
+      const { z } = entity;
+      const hp = atSpawn ? entity.maxHp : entity.hp;
+      const face = atSpawn ? OpenTibia.Direction.South : entity.face;
+      return [Saves.actorKey(entity), { x, y, z, hp, face }];
+    }));
+  }
+
   function characterSnapshot() {
     const floor = currentFloor();
     const steppingIntoLink = player.motion && floor.markers[World.key(player.x, player.y)]?.type === "link";
     const position = steppingIntoLink ? player.motion.from : player;
     const { z, hp, maxHp, xp, level, face, kit, stance, pursuit, vocation, sword, shielding, distance, fist, mana, magic, spellState } = player;
-    const creatures = Object.fromEntries(entities.filter(entity => creatureNames[entity.type]).map(entity => {
-      const { x, y, z, hp, face } = entity;
-      return [Saves.actorKey(entity), { x, y, z, hp, face }];
-    }));
     return {
-      version: 1,
+      version: 1, name: characterName, actions,
       player: {
         x: position.x, y: position.y, z, hp, maxHp, xp, level, face, kit, stance, pursuit,
         vocation, sword, shielding, distance, fist, mana, magic, spellState,
       },
-      quest, ratsDefeated, hasLedger, creatures, loot,
+      quest, ratsDefeated, hasLedger, creatures: creatureSnapshot(), loot,
     };
   }
 
   function saveProgress(force = false) {
-    if (edit || !saveKey || saveBlocked || (!force && !savePending && !needsRefresh)) return;
+    if (edit || !saveKey || (!force && !savePending && !needsRefresh)) return true;
+    if (saveBlocked) return false;
     try {
       saveRaw = Saves.write(saveKey, characterSnapshot(), saveRaw);
       savePending = false;
       saveAfter = performance.now() + 180;
       saveStatus("Saved on this device");
+      return true;
     } catch (error) {
       saveBlocked = true;
       $("save-game").disabled = true;
       saveStatus(error.name === "QuotaExceededError" ? "Browser storage is full." : error.message);
+      return false;
     }
   }
 
-  function resumePlay() {
+  function canLeaveCharacter() {
+    if (saveProgress(true)) return true;
+    return confirm("The current session could not be saved. Switch and leave those changes behind?");
+  }
+
+  function resumePlay(id) {
     const revision = Saves.revision(map);
-    const key = revision === worldRevisions[selectedWorld] ? Saves.progressKey(selectedWorld, revision) : null;
-    if (playRevision === revision && saveKey === key) return "continued";
-    const keepPlaytest = playRevision === revision && !saveKey && key;
+    const savedMap = revision === worldRevisions[selectedWorld];
+    if (!id && savedMap) {
+      try { id = Saves.selectedCharacter(selectedWorld, revision); } catch {
+        // The original slot is available when browser settings cannot be read.
+      }
+    }
+    id ??= Saves.originalCharacter;
+    const key = savedMap ? Saves.progressKey(selectedWorld, revision, id) : null;
+    if (playWorld === selectedWorld && playRevision === revision && saveKey === key) return "continued";
+    const keepPlaytest = playRevision === revision && !saveKey && key && id === Saves.originalCharacter;
     if (!keepPlaytest) resetPlay();
+    playWorld = selectedWorld;
     playRevision = revision;
+    activeCharacter = id;
+    characterName = Saves.defaultName;
+    actions = [...defaultActions];
+    if (id === Saves.originalCharacter) actions.splice(0, legacyActions.length, ...legacyActions);
+    $("character-select").disabled = !key;
     saveKey = key;
     saveRaw = null;
     saveBlocked = false;
@@ -227,12 +267,14 @@
       const result = Saves.read(key, map, hostiles);
       saveRaw = result.raw;
       let data = result.value;
-      if (!data && selectedWorld === "shire") {
+      if (!data && selectedWorld === "shire" && id === Saves.originalCharacter) {
         const priorKey = Saves.progressKey("shire", Shire.previousRevision);
         data = Saves.read(priorKey, map, hostiles, value => Saves.relocate(value, map, entities)).value;
       }
       saveStatus(result.value ? "Saved on this device" : "Autosave on");
       if (!data) return keepPlaytest ? "continued" : "new";
+      characterName = data.name ?? Saves.defaultName;
+      if (data.actions) actions.splice(0, data.actions.length, ...data.actions);
       for (const field of Object.keys(player)) {
         if (Object.hasOwn(data.player, field)) player[field] = data.player[field];
       }
@@ -264,8 +306,9 @@
 
   function exportCharacter() {
     if (edit || !saveKey) return;
+    const filename = characterName.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || "character";
     downloadJson({ format: "arda-save", version: 1, revision: playRevision, mapName: map.name,
-      progress: characterSnapshot() }, `arda-${selectedWorld}-save.json`);
+      progress: characterSnapshot() }, `arda-${selectedWorld}-${filename}-save.json`);
     journal("Character save exported.");
   }
 
@@ -286,10 +329,11 @@
         throw new Error("The character save is unreadable.");
       }
       const current = localStorage.getItem(key);
-      if (current !== null && !confirm("Replace the character and quest progress for this map with the imported save?")) return;
-      Saves.write(key, progress, current);
+      if (!saveBlocked && current !== saveRaw) throw new Error("This save changed in another tab. Reload before importing.");
+      if (current !== null && !confirm(`Replace ${characterName} in the active slot with the imported character?`)) return;
+      Saves.write(key, { ...progress, name: characterName, actions: progress.actions ?? actions }, current);
       playRevision = null;
-      announcePlay(resumePlay());
+      announcePlay(resumePlay(activeCharacter));
       journal("Character save imported.");
     } catch (error) {
       journal(`Import failed. ${error.message}`);
@@ -328,6 +372,87 @@
     }
   }
 
+  function switchCharacter(id) {
+    if (id !== activeCharacter) {
+      Saves.selectCharacter(selectedWorld, playRevision, id);
+      $("journal").replaceChildren();
+      announcePlay(resumePlay(id));
+    }
+    $("character-screen").close();
+    canvas.focus({ preventScroll: true });
+  }
+
+  function showCharacterScreen() {
+    if (edit || !saveKey) return;
+    const screen = $("character-screen");
+    const list = $("character-list");
+    list.replaceChildren();
+    $("character-error").textContent = "";
+    $("character-world").textContent = map.name;
+    $("new-character-form").reset();
+    $("new-character-details").textContent = "";
+    try {
+      const roster = Saves.listCharacters(selectedWorld, playRevision);
+      for (const entry of roster) {
+        const current = entry.id === activeCharacter;
+        const row = document.createElement("li");
+        const button = document.createElement("button");
+        button.type = "button";
+        const name = document.createElement("strong");
+        name.textContent = current ? characterName : entry.name;
+        const details = document.createElement("span");
+        const level = current ? player.level : entry.level;
+        const vocation = current ? Vocations.get(player.vocation).name : entry.vocation;
+        details.textContent = [level ? `Level ${level}` : "Original slot", vocation, current ? "Active" : ""].filter(Boolean).join(" · ");
+        if (current) button.setAttribute("aria-current", "true");
+        button.append(name, details);
+        button.addEventListener("click", () => {
+          if (current || canLeaveCharacter()) {
+            try { switchCharacter(entry.id); } catch (error) { characterError(error); }
+          }
+        });
+        row.append(button);
+        list.append(row);
+      }
+    } catch (error) {
+      characterError(error);
+    }
+    held.clear();
+    closeTileMenu();
+    saveProgress(true);
+    magicClock = null;
+    screen.showModal();
+  }
+
+  function characterError(error) {
+    $("character-error").textContent = error.name === "QuotaExceededError" ? "Browser storage is full." : error.message;
+  }
+
+  function createCharacter() {
+    if (edit || !saveKey) return;
+    const name = $("new-character-name").value.trim();
+    const vocation = $("new-character-vocation").value;
+    if (!Saves.nameValid(name) || !Object.hasOwn(Vocations.classes, vocation)) {
+      return characterError(new Error("Enter a character name and choose a vocation."));
+    }
+    try {
+      if (Saves.listCharacters(selectedWorld, playRevision).some(entry => entry.name.toLowerCase() === name.toLowerCase())) {
+        return characterError(new Error("A character with that name already exists in this world."));
+      }
+      if (!canLeaveCharacter()) return;
+      const id = Saves.newCharacterId();
+      const key = Saves.progressKey(selectedWorld, playRevision, id);
+      const progress = {
+        version: 1, name, actions: [...defaultActions], player: startingPlayer(vocation),
+        quest: "available", ratsDefeated: 0, hasLedger: false, creatures: creatureSnapshot(true), loot: [],
+      };
+      Saves.write(key, progress, null);
+      switchCharacter(id);
+    } catch (error) {
+      characterError(error);
+    }
+  }
+
   function switchWorld(id) {
     if (!Object.hasOwn(worlds, id) || id === selectedWorld) return;
     finishPaint();
@@ -336,7 +461,10 @@
       $("world-select").value = selectedWorld;
       return;
     }
-    saveProgress(true);
+    if (!canLeaveCharacter()) {
+      $("world-select").value = selectedWorld;
+      return;
+    }
     closeTileMenu();
     held.clear();
     selectedWorld = id;
@@ -362,6 +490,7 @@
   function labelUpdate() {
     const floor = currentFloor();
     $("region").textContent = map.name;
+    $("active-character").textContent = edit ? "" : characterName;
     document.title = `Arda · ${map.name}`;
     $("floor-name").textContent = floor.name;
     $("floor-code").textContent = `Z ${floor.z}`;
@@ -583,22 +712,28 @@
       `${vocation.specialty}. +${vocation.hp} health and +${vocation.mana} mana per level. ${spells.map(spell => spell.name).join(", ")}.`;
   }
 
+  function applyVocation(character, id) {
+    if (!id) return;
+    const vocation = Vocations.get(id);
+    const previous = Vocations.get(character.vocation);
+    character.mana += (character.level - 1) * (vocation.mana - previous.mana);
+    character.spellState.regen = Math.floor(character.spellState.regen * vocation.regen / previous.regen);
+    character.vocation = id;
+    if (id === "paladin") {
+      if (character.kit.worn.weapon !== "bow") {
+        if (!character.kit.bag.bow) Equipment.add(character.kit, "bow");
+        Equipment.equip(character.kit, "bow");
+      }
+    }
+    if (id === "monk") Equipment.stow(character.kit, "weapon");
+  }
+
   function chooseVocation(id) {
     if (edit || player.vocation || !Object.hasOwn(Vocations.classes, id)) return;
     const vocation = Vocations.get(id);
     if (!confirm(`Become a ${vocation.name}? This is a permanent choice for this character.`)) return;
     advanceMagic(performance.now(), true);
-    const previous = Vocations.get(player.vocation);
-    player.mana += Vocations.maxMana(player.level, id) - Vocations.maxMana(player.level, player.vocation);
-    player.spellState.regen = Math.floor(player.spellState.regen * vocation.regen / previous.regen);
-    player.vocation = id;
-    if (id === "paladin") {
-      if (player.kit.worn.weapon !== "bow") {
-        if (!player.kit.bag.bow) Equipment.add(player.kit, "bow");
-        Equipment.equip(player.kit, "bow");
-      }
-    }
-    if (id === "monk") Equipment.stow(player.kit, "weapon");
+    applyVocation(player, id);
     stopActions();
     inventoryChanged();
     journal(`You became a ${vocation.name}.`);
@@ -1426,17 +1561,10 @@
     needsRefresh = true;
   }
 
-  function validAction(id) {
-    return id === null || (typeof id === "string" && (["attack", "use", "stop"].includes(id) ||
-      Object.hasOwn(Magic.spells, id) || (Object.hasOwn(Equipment.items, id) && id !== "pack" && id !== "coin")));
-  }
-
   function setAction(index, id) {
-    if (!validAction(id)) return;
+    if (!Saves.validAction(id)) return;
     actions[index] = id;
-    try { localStorage.setItem("arda.actions.v1", JSON.stringify(actions)); } catch {
-      // Hotkeys can still be used in this tab.
-    }
+    savePending = true;
     updateActions();
   }
 
@@ -1876,6 +2004,7 @@
     $("controls").hidden = edit;
     previewFloor = null;
     $("mouse-mode").disabled = edit;
+    $("character-select").disabled = edit || !saveKey;
     canvas.setAttribute("aria-label", edit ? "World editor. Click to paint. Use WASD or arrow keys to pan." : "World map. Use arrow keys or WASD to move.");
     canvas.focus({ preventScroll: true });
     needsRefresh = true;
@@ -1926,6 +2055,16 @@
   }
 
   $("world-select").addEventListener("change", event => switchWorld(event.target.value));
+  $("character-select").addEventListener("click", showCharacterScreen);
+  $("close-characters").addEventListener("click", () => $("character-screen").close());
+  $("new-character-vocation").addEventListener("change", event => {
+    const vocation = Vocations.classes[event.target.value];
+    $("new-character-details").textContent = vocation?.specialty ?? "";
+  });
+  $("new-character-form").addEventListener("submit", event => {
+    event.preventDefault();
+    createCharacter();
+  });
   $("save-game").addEventListener("click", () => saveProgress(true));
   $("export-save").addEventListener("click", exportCharacter);
   $("import-save").addEventListener("click", () => $("character-file").click());
@@ -2144,7 +2283,7 @@
     for (const type of ["dragover", "drop"]) {
       actionBar.addEventListener(type, event => {
         const button = event.target.closest("[data-action-index]");
-        if (!button || !draggedItem || draggedItem.origin === "loot" || !validAction(draggedItem.id)) return;
+        if (!button || !draggedItem || draggedItem.origin === "loot" || !Saves.validAction(draggedItem.id)) return;
         event.preventDefault();
         if (type === "dragover") {
           event.dataTransfer.dropEffect = "copy";
@@ -2193,7 +2332,7 @@
   });
 
   window.addEventListener("keydown", event => {
-    if (event.target.matches("input, select, textarea") || event.altKey) return;
+    if ($("character-screen").open || event.target.matches("input, select, textarea") || event.altKey) return;
     const key = event.key.toLowerCase();
     if (edit && (event.metaKey || event.ctrlKey) && key === "z") {
       event.preventDefault();
@@ -2242,7 +2381,7 @@
   new ResizeObserver(resize).observe(canvas);
 
   function frame(now) {
-    if (!edit && !document.hidden) {
+    if (!edit && !document.hidden && !$("character-screen").open) {
       updateGame(now);
       if (needsRefresh || Math.floor((now - hunt.start) / 1000) !== huntSecond) updateHunt(now);
       if (needsRefresh) savePending = true;
@@ -2258,6 +2397,7 @@
   $("vocation-select").append(new Option("Select vocation…", "", true, true));
   for (const [id, vocation] of Object.entries(Vocations.classes)) {
     $("vocation-select").append(new Option(vocation.name, id));
+    $("new-character-vocation").append(new Option(vocation.name, id));
   }
   updateVocationPreview();
   buildSpellbook();

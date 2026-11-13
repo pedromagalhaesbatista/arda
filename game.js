@@ -54,6 +54,7 @@
   let savePending = false;
   let saveAfter = 0;
   let landmarkFloor = null;
+  const minimapFloors = new WeakMap();
 
   let player;
   let entities = [];
@@ -283,7 +284,7 @@
       for (const prior of compatibleRevisions()) {
         if (data) break;
         const priorKey = Saves.progressKey(selectedWorld, prior, id);
-        data = Saves.read(priorKey, map, hostiles, value => Saves.relocate(value, map, entities)).value;
+        data = Saves.read(priorKey, map, hostiles, value => Saves.relocate(Shire.moveOldSave(value), map, entities)).value;
       }
       saveStatus(result.value ? "Saved on this device" : "Autosave on");
       if (!data) return keepPlaytest ? "continued" : "new";
@@ -339,7 +340,7 @@
       if (data?.format !== "arda-save" || data.version !== 1) throw new Error("Choose an Arda character save.");
       const previousShire = compatibleRevisions().includes(data.revision);
       if (data.revision !== playRevision && !previousShire) throw new Error("Open the matching map before importing this save.");
-      const progress = previousShire ? Saves.relocate(data.progress, map, entities) : data.progress;
+      const progress = previousShire ? Saves.relocate(Shire.moveOldSave(data.progress), map, entities) : data.progress;
       if (!Saves.valid(progress, map, entities.filter(entity => creatureNames[entity.type]))) {
         throw new Error("The character save is unreadable.");
       }
@@ -530,14 +531,9 @@
     $("map-zoom-out").disabled = minimapZoom === 1;
     mini.fillStyle = "#151915";
     mini.fillRect(0, 0, minimap.width, minimap.height);
-    for (let y = 0; y < map.height; y++) {
-      for (let x = 0; x < map.width; x++) {
-        const ground = floor.ground[World.index(map, x, y)];
-        const object = floor.objects[World.key(x, y)];
-        mini.fillStyle = Art.mapColors[object] ?? Art.mapColors[ground];
-        mini.fillRect(ox + x * scale, oy + y * scale, scale, scale);
-      }
-    }
+    const terrain = minimapTerrain(floor);
+    mini.imageSmoothingEnabled = false;
+    mini.drawImage(terrain, ox, oy, map.width * scale, map.height * scale);
     for (const [key, marker] of Object.entries(floor.markers)) {
       if (marker.type !== "link" && !(map.adventure === "shire" && floor.z === 0 && marker.type === "notice")) continue;
       const [x, y] = key.split(",").map(Number);
@@ -555,6 +551,22 @@
     return { scale, ox, oy };
   }
 
+  function minimapTerrain(floor) {
+    const cached = !edit && minimapFloors.get(floor);
+    if (cached) return cached;
+    const terrain = document.createElement("canvas");
+    terrain.width = map.width;
+    terrain.height = map.height;
+    const context = terrain.getContext("2d");
+    for (let y = 0; y < map.height; y++) for (let x = 0; x < map.width; x++) {
+      const ground = floor.ground[World.index(map, x, y)];
+      const object = floor.objects[World.key(x, y)];
+      context.fillStyle = Art.mapColors[object] ?? Art.mapColors[ground];
+      context.fillRect(x, y, 1, 1);
+    }
+    if (!edit) minimapFloors.set(floor, terrain);
+    return terrain;
+  }
   function updateLandmarks() {
     const floor = currentFloor();
     const panel = $("landmarks");
@@ -567,6 +579,7 @@
     landmarkFloor = floor;
     const list = $("landmark-list");
     list.replaceChildren();
+    const groups = new Map();
     for (const [key, marker] of Object.entries(floor.markers)) {
       if (marker.type !== "notice") continue;
       const [x, y] = key.split(",").map(Number);
@@ -583,7 +596,17 @@
         needsRefresh = true;
         canvas.focus({ preventScroll: true });
       });
-      list.append(button);
+      const group = Shire.landmarkRegion(x, y);
+      if (!groups.has(group)) {
+        const section = document.createElement("details");
+        const heading = document.createElement("summary");
+        heading.textContent = group;
+        section.open = group === Shire.landmarkRegion(player.x, player.y);
+        section.append(heading);
+        groups.set(group, section);
+        list.append(section);
+      }
+      groups.get(group).append(button);
     }
   }
 
@@ -1209,7 +1232,9 @@
       Object.assign(player, { x: marker.x, y: marker.y, z: marker.z, motion: null });
       path = [];
       target = null;
-      journal(`Entered ${destination.name}.`);
+      const ferry = map.adventure === "shire" && marker.z === 0 && floor.z === 0 &&
+        ((x === 110 && y === 81) || (x === 116 && y === 81));
+      journal(ferry ? "You cross the Brandywine by ferry." : `Entered ${destination.name}.`);
       needsRefresh = true;
       return true;
     }
@@ -2134,6 +2159,7 @@
     edit = enable;
     magicClock = null;
     if (!edit) {
+      for (const floor of map.floors) minimapFloors.delete(floor);
       const state = resumePlay();
       if (state !== "continued") announcePlay(state);
     }

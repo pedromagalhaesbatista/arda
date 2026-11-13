@@ -12,7 +12,10 @@ const Art = (() => {
     grass: "#566035", meadow: "#586b31", crop: "#7c852b", path: "#b49e76", stone: "#858479", wood: "#80522f",
     water: "#276b9b", river: "#367782", bridge: "#855838", soil: "#704a30", void: "#0d100e",
     tree: "#364620", pine: "#2f431e", wall: "#a29b8d", sideWall: "#a29b8d",
-    timber: "#8a6747", sideTimber: "#8a6747", roof: "#7e5043", fence: "#92724d", smial: "#b3af64", millWheel: "#694727", partyTree: "#39522a", appleTree: "#536535", hedge: "#506132"
+    timber: "#8a6747", sideTimber: "#8a6747", roof: "#7e5043", fence: "#92724d", smial: "#b3af64",
+    smialBlue: "#a9ad73", smialRed: "#b1a965", thatch: "#b2904e", thatchChimney: "#b2904e",
+    tileChimney: "#7e5043", cottageWindow: "#a47d54", stoneWindow: "#a29b8d",
+    millWheel: "#694727", partyTree: "#39522a", appleTree: "#536535", hedge: "#506132"
   };
 
   function sprite(c, id, x, y) {
@@ -50,10 +53,17 @@ const Art = (() => {
   }
 
   const landmarks = {};
+  const doors = {
+    smial: ["#374728", "#435b2c", "#4e6632", "#5c7438"],
+    smialBlue: ["#233738", "#2e4b53", "#385760", "#476975"],
+    smialRed: ["#492c24", "#673c2d", "#774938", "#895744"],
+  };
+  const architecture = new Set(["thatch", "thatchChimney", "tileChimney", "cottageWindow", "stoneWindow"]);
+  const thatchTiles = [];
 
   function landmark(type) {
     if (landmarks[type]) return landmarks[type];
-    const smial = type === "smial";
+    const smial = Object.hasOwn(doors, type);
     const image = document.createElement("canvas");
     image.width = smial ? 96 : 32;
     image.height = smial ? 57 : 32;
@@ -62,7 +72,7 @@ const Art = (() => {
       const grass = ["#3a4a21", "#455628", "#50612b", "#5c6b30", "#647136"];
       const soil = ["#715030", "#805d39", "#8f6942", "#9b764b", "#a48258"];
       const stone = ["#665a43", "#7e7052", "#938561", "#a79a6e"];
-      const wood = ["#374728", "#435b2c", "#4e6632", "#5c7438"];
+      const wood = doors[type];
       for (let y = 0; y < image.height; y++) for (let x = 0; x < image.width; x++) {
         const dx = x - 47;
         const n = (Math.imul(x + 19, 19349663) ^ Math.imul(y + 47, 73856093)) >>> 0;
@@ -94,6 +104,49 @@ const Art = (() => {
       ctx.fillRect(15, 15, 3, 3);
     }
     landmarks[type] = image;
+    return image;
+  }
+
+  function building(c, type, x, y, vx, vy) {
+    if (type.startsWith("thatch")) {
+      const variant = ((Math.imul(vx, 73856093) ^ Math.imul(vy, 19349663)) >>> 0) % 8;
+      c.drawImage(thatchTiles[variant] ??= thatchTile(variant), x, y);
+    } else if (type === "tileChimney") {
+      draw(c, sprites.objects.roof, x, y, vx, vy, phase);
+    } else {
+      draw(c, sprites.objects[type === "stoneWindow" ? "wall" : "timber"], x, y, vx, vy, phase);
+      c.fillStyle = "#432d21";
+      c.fillRect(x + 7, y + 8, 18, 16);
+      c.fillStyle = "#d5a25f";
+      c.fillRect(x + 9, y + 10, 14, 11);
+      c.fillStyle = "#8c5d37";
+      c.fillRect(x + 15, y + 10, 2, 11);
+      c.fillRect(x + 9, y + 15, 14, 1);
+      c.fillStyle = "#b69b72";
+      c.fillRect(x + 6, y + 22, 20, 2);
+    }
+    if (type.endsWith("Chimney")) {
+      c.fillStyle = "#5d4a3b";
+      c.fillRect(x + 17, y + 8, 9, 15);
+      c.fillStyle = "#92715b";
+      c.fillRect(x + 17, y + 10, 6, 11);
+      c.fillStyle = "#b29475";
+      c.fillRect(x + 16, y + 7, 11, 3);
+      c.fillStyle = "#30251f";
+      c.fillRect(x + 18, y + 7, 7, 1);
+    }
+  }
+
+  function thatchTile(variant) {
+    const image = document.createElement("canvas");
+    image.width = image.height = size;
+    const ctx = image.getContext("2d");
+    const colors = ["#795730", "#94703d", "#aa8649", "#bb9959", "#cfaf6a"];
+    for (let y = 0; y < size; y += 2) for (let x = 0; x < size; x++) {
+      const grain = ((Math.imul(x + variant * 32 + 17, 73856093) ^ Math.imul(y + 13, 19349663)) >>> 0) % colors.length;
+      ctx.fillStyle = colors[y % 8 === 6 ? Math.min(grain, 2) : grain];
+      ctx.fillRect(x, y, 1, 2);
+    }
     return image;
   }
 
@@ -136,11 +189,12 @@ const Art = (() => {
       c.restore();
       return;
     }
-    if (type === "smial" || type === "millWheel") {
+    if (Object.hasOwn(doors, type) || type === "millWheel") {
       const image = landmark(type);
       c.drawImage(image, x - (image.width - size) / 2, y + size - image.height);
       return;
     }
+    if (architecture.has(type)) return building(c, type, x, y, vx, vy);
     draw(c, sprites.objects[type], x, y, vx, vy, phase);
   }
 
@@ -189,11 +243,12 @@ const Art = (() => {
 
   function preview(c, type, layer) {
     if (layer === "ground") return tile(c, type, 0, 0);
-    if (type === "smial" || type === "millWheel") {
+    if (Object.hasOwn(doors, type) || type === "millWheel") {
       const image = landmark(type);
       c.drawImage(image, 0, 0, size, size * image.height / image.width);
       return;
     }
+    if (architecture.has(type)) return building(c, type, 0, 0, 0, 0);
     if (type === "notice") return signpost(c, 0, 0);
     if (type === "rug" || type === "bunting") return decoration(c, type, 0, 0);
     const group = layer === "objects" ? sprites.objects : sprites.actors;

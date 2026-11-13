@@ -12,13 +12,20 @@ const World = (() => {
     smial: "Hobbit door", millWheel: "Water wheel", bank: "Grassy bank", table: "Table", bed: "Bed", chest: "Chest",
     partyTree: "Party tree", appleTree: "Apple tree", hedge: "Hedge", reeds: "Reeds",
     bench: "Bench", bunting: "Bunting", basket: "Basket", hearth: "Hearth", rug: "Rug",
+    smialBlue: "Blue-door smial", smialRed: "Red-door smial", thatch: "Thatched roof",
+    thatchChimney: "Thatched roof with chimney", tileChimney: "Tiled roof with chimney",
+    cottageWindow: "Timber cottage window", stoneWindow: "Stone mullioned window",
   };
   const markers = {
     start: "Player start", link: "Floor link", keeper: "Innkeeper", miller: "Miller", gardener: "Sam Gamgee",
     ledger: "Mill ledger", notice: "Signpost", rat: "Cellar rat", wolf: "Wolf",
     merchant: "Bywater outfitter", bankRat: "Bank rat", marshWolf: "Marsh wolf",
   };
-  const solid = new Set(["tree", "pine", "rock", "wall", "sideWall", "timber", "sideTimber", "roof", "fence", "barrel", "lamp", "millWheel", "bank", "table", "bed", "chest", "partyTree", "appleTree", "hedge", "bench", "basket", "hearth"]);
+  const solid = new Set([
+    "tree", "pine", "rock", "wall", "sideWall", "timber", "sideTimber", "roof", "fence", "barrel", "lamp",
+    "millWheel", "bank", "table", "bed", "chest", "partyTree", "appleTree", "hedge", "bench", "basket",
+    "hearth", "thatch", "thatchChimney", "tileChimney", "cottageWindow", "stoneWindow",
+  ]);
   const key = (x, y) => `${x},${y}`;
   const index = (map, x, y) => y * map.width + x;
   const inside = (map, x, y) => x >= 0 && y >= 0 && x < map.width && y < map.height;

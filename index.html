@@ -13,6 +13,7 @@
   <script defer src="art.js"></script>
   <script defer src="equipment.js"></script>
   <script defer src="saves.js"></script>
+  <script defer src="layout.js"></script>
   <script defer src="game.js"></script>
 </head>
 <body>
@@ -26,6 +27,7 @@
           <option value="context">Context controls</option>
           <option value="classic">Classic controls</option>
         </select>
+        <button id="reset-layout" title="Restore default panel and action bar positions and sizes">Reset layout</button>
         <div class="modes" role="group" aria-label="Game mode">
           <button id="play" aria-pressed="true">Play</button>
           <button id="edit" aria-pressed="false">World Editor</button>
@@ -35,7 +37,7 @@
 
     <div class="layout">
       <aside id="left-dock" class="dock" aria-label="Character panels">
-        <section class="panel character" data-window>
+        <section class="panel character" data-window="skills">
           <div class="panel-heading"><h3><img src="opentibia/ui/skills.png" alt="">Skills</h3><span id="level">Level 1</span></div>
           <div class="vitals">
             <div class="vital-label"><span>Health</span><span id="health-value">30 / 30</span></div>
@@ -54,7 +56,7 @@
             </div>
           </div>
         </section>
-        <section class="panel" data-window>
+        <section class="panel" data-window="hunt">
           <div class="panel-heading"><h3><img src="opentibia/ui/healthinfo.png" alt="">Hunt Analyser</h3></div>
           <dl class="readouts">
             <div><dt>Session</dt><dd id="hunt-time">00:00</dd></div>
@@ -65,7 +67,7 @@
             <div><dt>Healing</dt><dd id="hunt-healing">0</dd></div>
           </dl>
         </section>
-        <section class="panel" data-window>
+        <section class="panel" data-window="bestiary">
           <div class="panel-heading"><h3><img src="opentibia/ui/battle.png" alt="">Bestiary Tracker</h3></div>
           <ul id="bestiary" class="bestiary"></ul>
         </section>
@@ -80,12 +82,22 @@
           </div>
         </div>
         <div class="game-screen">
-          <div id="action-bar" class="action-bar" role="group" aria-label="Left action bar"></div>
+          <div class="bar-dock" data-bar-edge="top"></div>
+          <div class="bar-dock" data-bar-edge="left">
+            <div id="left-bar" class="action-window" data-action-window="primary">
+              <div class="action-bar" id="action-bar" role="group" aria-label="F1 through F6 action bar"></div>
+            </div>
+          </div>
           <div class="viewport">
             <div id="tile-menu" class="tile-menu" hidden aria-label="Tile actions"></div>
             <canvas id="world" tabindex="0" aria-label="World map. Use arrow keys or WASD to move." aria-describedby="controls"></canvas>
           </div>
-          <div id="action-bar-right" class="action-bar" role="group" aria-label="Right action bar"></div>
+          <div class="bar-dock" data-bar-edge="right">
+            <div id="right-bar" class="action-window" data-action-window="secondary">
+              <div id="action-bar-right" class="action-bar" role="group" aria-label="F7 through F12 action bar"></div>
+            </div>
+          </div>
+          <div class="bar-dock" data-bar-edge="bottom"></div>
           <div id="status-rail" class="status-rail" aria-label="Health and experience">
             <div class="rail-meter rail-health" id="rail-health" role="meter" aria-label="Health" aria-valuemin="0" aria-valuemax="30" aria-valuenow="30"><span></span><b aria-hidden="true">30/30</b></div>
             <div class="rail-meter rail-xp" id="rail-xp" role="meter" aria-label="Experience" aria-valuemin="0" aria-valuemax="18" aria-valuenow="0"><span></span><b aria-hidden="true">0/18</b></div>
@@ -96,6 +108,7 @@
           <span><kbd>E</kbd> Use</span>
           <span id="mouse-hint"></span>
         </div>
+        <div id="console-divider"></div>
         <section class="journal" aria-label="Game console">
           <div class="journal-heading">
             <div id="console-tabs" class="console-tabs" role="group" aria-label="Console channels">
@@ -116,18 +129,18 @@
       </section>
 
       <aside id="tracking-dock" class="dock" aria-label="Tracking panels">
-        <section class="panel" data-window>
+        <section class="panel" data-window="quest">
           <div class="panel-heading"><h3><img src="opentibia/ui/questlog.png" alt="">Quest Tracker</h3></div>
           <p id="quest-status" hidden></p>
           <p id="quest-empty" class="panel-note">No active quest</p>
         </section>
-        <section id="battle-panel" class="panel battle" data-window>
+        <section id="battle-panel" class="panel battle" data-window="battle">
           <div class="panel-heading"><h3><img src="opentibia/ui/battle.png" alt="">Battle List</h3><span id="battle-count"></span></div>
           <div id="battle-list"></div>
         </section>
       </aside>
-      <aside class="sidebar dock" aria-label="Game panels">
-        <section class="panel map-panel">
+      <aside id="right-dock" class="sidebar dock" aria-label="Game panels">
+        <section class="panel map-panel" data-window="map">
           <div class="panel-heading"><h3><img src="opentibia/ui/minimap.png" alt="">Minimap</h3><span id="floor-code">Z 0</span></div>
           <div class="minimap-body">
             <canvas id="minimap" width="240" height="128" aria-label="Map overview"></canvas>
@@ -145,41 +158,39 @@
           </details>
         </section>
 
-        <div id="play-panel">
-          <section class="panel equipment" data-window>
-            <div class="panel-heading"><h3><img src="opentibia/ui/inventory.png" alt="">Equipment</h3></div>
-            <div id="equipment-slots" class="equipment-slots"></div>
-            <div class="gear-stats" aria-label="Equipment stats">
-              <span>Attack <strong id="gear-attack"></strong></span>
-              <span>Defense <strong id="gear-defense"></strong></span>
-              <span>Armor <strong id="gear-armor"></strong></span>
+        <section class="panel equipment" data-window="equipment">
+          <div class="panel-heading"><h3><img src="opentibia/ui/inventory.png" alt="">Equipment</h3></div>
+          <div id="equipment-slots" class="equipment-slots"></div>
+          <div class="gear-stats" aria-label="Equipment stats">
+            <span>Attack <strong id="gear-attack"></strong></span>
+            <span>Defense <strong id="gear-defense"></strong></span>
+            <span>Armor <strong id="gear-armor"></strong></span>
+          </div>
+          <div class="fight-controls">
+            <div id="stances" class="button-row" role="group" aria-label="Fighting stance">
+              <button data-stance="offensive" title="Offensive fighting" aria-label="Offensive fighting">Attack</button>
+              <button data-stance="balanced" title="Balanced fighting" aria-label="Balanced fighting">Balance</button>
+              <button data-stance="defensive" title="Defensive fighting" aria-label="Defensive fighting">Defend</button>
             </div>
-            <div class="fight-controls">
-              <div id="stances" class="button-row" role="group" aria-label="Fighting stance">
-                <button data-stance="offensive" title="Offensive fighting" aria-label="Offensive fighting">Attack</button>
-                <button data-stance="balanced" title="Balanced fighting" aria-label="Balanced fighting">Balance</button>
-                <button data-stance="defensive" title="Defensive fighting" aria-label="Defensive fighting">Defend</button>
-              </div>
-              <div id="pursuit" class="button-row" role="group" aria-label="Combat movement">
-                <button data-pursuit="stand" title="Stand while fighting">Stand</button>
-                <button data-pursuit="chase" title="Chase opponent">Chase</button>
-              </div>
-              <button id="stop-button" title="Stop actions (Esc)">Stop</button>
+            <div id="pursuit" class="button-row" role="group" aria-label="Combat movement">
+              <button data-pursuit="stand" title="Stand while fighting">Stand</button>
+              <button data-pursuit="chase" title="Chase opponent">Chase</button>
             </div>
-          </section>
-          <section id="loot-panel" class="panel pack" hidden>
-            <div class="panel-heading">
-              <h3 id="loot-title">Loot</h3>
-              <button id="close-loot" aria-label="Close loot">×</button>
-            </div>
-            <div class="slots" id="loot-slots"></div>
-            <button id="take-all" class="take-all">Take all</button>
-          </section>
-          <section id="backpack-panel" class="panel pack" data-window>
-            <div class="panel-heading"><h3>Backpack</h3><span id="coins">0 coin</span></div>
-            <div class="slots" id="slots"></div>
-          </section>
-        </div>
+            <button id="stop-button" title="Stop actions (Esc)">Stop</button>
+          </div>
+        </section>
+        <section id="loot-panel" class="panel pack" data-window="loot" hidden>
+          <div class="panel-heading">
+            <h3 id="loot-title">Loot</h3>
+            <button id="close-loot" aria-label="Close loot">×</button>
+          </div>
+          <div class="slots" id="loot-slots"></div>
+          <button id="take-all" class="take-all">Take all</button>
+        </section>
+        <section id="backpack-panel" class="panel pack" data-window="backpack">
+          <div class="panel-heading"><h3>Backpack</h3><span id="coins">0 coin</span></div>
+          <div class="slots" id="slots"></div>
+        </section>
 
         <section id="edit-panel" class="panel editor" hidden>
           <div class="panel-heading"><h3>Map tools</h3></div>

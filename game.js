@@ -1564,11 +1564,9 @@
     hover = null;
     $("play").setAttribute("aria-pressed", String(!edit));
     $("edit").setAttribute("aria-pressed", String(edit));
-    $("play-panel").hidden = edit;
+    ClientLayout.setEditor(edit);
     $("edit-panel").hidden = !edit;
     $("controls").hidden = edit;
-    for (const id of ["action-bar", "action-bar-right", "status-rail", "left-dock", "tracking-dock"]) $(id).hidden = edit;
-    document.querySelector(".client").toggleAttribute("data-editing", edit);
     previewFloor = null;
     $("mouse-mode").disabled = edit;
     canvas.setAttribute("aria-label", edit ? "World editor. Click to paint. Use WASD or arrow keys to pan." : "World map. Use arrow keys or WASD to move.");
@@ -1769,22 +1767,6 @@
     minimapZoom = 1;
     drawMinimap();
   });
-
-  for (const panel of document.querySelectorAll("[data-window]")) {
-    const heading = panel.firstElementChild;
-    const name = heading.querySelector("h3").textContent;
-    const button = document.createElement("button");
-    button.type = "button";
-    button.className = "window-toggle";
-    const update = collapsed => {
-      panel.toggleAttribute("data-collapsed", collapsed);
-      button.setAttribute("aria-expanded", String(!collapsed));
-      button.setAttribute("aria-label", `${collapsed ? "Expand" : "Collapse"} ${name}`);
-    };
-    update(false);
-    button.addEventListener("click", () => update(!panel.hasAttribute("data-collapsed")));
-    heading.append(button);
-  }
 
   function changeGameZoom(direction) {
     gameZoom = Math.min(2.5, Math.max(.75, gameZoom + direction * .25));

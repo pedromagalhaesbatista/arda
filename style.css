@@ -60,7 +60,7 @@ h3 { font-size: 12px; font-weight: 700; letter-spacing: .085em; text-transform: 
 #journal { padding: 5px 0 0; height: 77px; list-style: none; overflow: auto; color: #bcbda8; font-size: 13px; line-height: 1.65; }
 #journal li { overflow-wrap: anywhere; }
 #journal li:last-child { color: #ede4cd; }
-.sidebar, #play-panel { display: grid; gap: 10px; }
+.sidebar { display: grid; gap: 10px; }
 .panel-heading { min-height: 39px; display: flex; justify-content: space-between; align-items: center; padding: 0 11px; border-bottom: 1px solid var(--line); }
 #minimap { display: block; width: calc(100% - 18px); height: auto; margin: 9px; image-rendering: pixelated; border: 1px solid #414437; background: #171b16; }
 .landmarks { border-top: 1px solid var(--line); }
@@ -231,7 +231,7 @@ h1 { font-size: 25px; }
 .viewport { height: clamp(340px, calc(100dvh - 269px), 950px); }
 .controls { min-height: 27px; padding: 3px 7px; gap: 3px 9px; font-size: 11px; }
 kbd { font-size: 10px; padding: 0 3px; }
-.sidebar, #play-panel { gap: 5px; }
+.sidebar { gap: 5px; }
 .sidebar { min-width: 0; }
 #minimap { width: calc(100% - 12px); margin: 6px; cursor: crosshair; }
 .landmarks summary { padding: 5px 7px; }
@@ -312,9 +312,18 @@ h1 { font: bold 14px Arial, sans-serif; }
 .brand-mark { width: 15px; height: 15px; font-size: 10px; }
 .modes, .modes button, .world-controls select { border-radius: 1px; }
 .modes button, .world-controls select { padding: 2px 5px; }
-.layout { grid-template-columns: 154px minmax(0, 1fr) 154px 178px; gap: 2px; align-items: stretch; }
+.layout {
+  grid-template-columns: min(var(--dock-left, 154px), 22vw) minmax(0, 1fr) min(var(--dock-tracking, 154px), 22vw) min(var(--dock-right, 178px), 22vw);
+  grid-template-areas: "left game tracking right";
+  gap: 2px;
+  align-items: stretch;
+}
+#left-dock { grid-area: left; }
+#tracking-dock { grid-area: tracking; }
+#right-dock { grid-area: right; }
+.game-panel { grid-area: game; }
 .dock { min-width: 0; background: #444 url("opentibia/ui/panel_side.png") center / 100% 100%; border: 1px solid #676767; }
-.dock, #play-panel { display: flex; flex-direction: column; gap: 2px; align-content: start; }
+.dock { display: flex; flex-direction: column; gap: 2px; align-content: start; }
 .dock { padding: 1px; overflow: auto; max-height: calc(100dvh - 35px); }
 .panel { flex: 0 0 auto; border: 1px solid #747474; border-radius: 0; background: #474747 url("opentibia/ui/panel_content.png") center / 100% 100%; }
 .panel-heading, .game-heading { min-height: 20px; background: linear-gradient(#565656, #393939); border-bottom: 1px solid #707070; box-shadow: inset 0 1px #757575; padding: 0 4px; }
@@ -325,8 +334,10 @@ h1 { font: bold 14px Arial, sans-serif; }
 .game-heading h2 { font: bold 11px Arial, sans-serif; }
 .view-tools button { min-width: 17px; height: 16px; padding: 0 3px; border-radius: 0; line-height: 1; }
 .game-panel { display: flex; flex-direction: column; border-radius: 0; border-color: #707070; min-width: 0; }
-.game-screen { display: grid; grid-template-columns: 34px minmax(0, 1fr) 34px 26px; min-width: 0; background: #444 url("opentibia/ui/panel_side.png") center / 100% 100%; gap: 2px; padding: 2px; }
-.viewport { height: clamp(335px, calc(100dvh - 175px), 1200px); border: 1px solid #777; box-shadow: 0 0 0 1px #181818; }
+.game-screen { display: grid; grid-template-columns: var(--bar-left, 0px) minmax(0, 1fr) var(--bar-right, 0px) 26px;
+  grid-template-areas: "top top top top" "bar-left map bar-right rail" "bottom bottom bottom bottom";
+  grid-template-rows: auto auto auto; min-width: 0; background: #444 url("opentibia/ui/panel_side.png") center / 100% 100%; gap: 2px; padding: 2px; }
+.viewport { height: clamp(260px, calc(100dvh - 94px - var(--console-height, 81px) - var(--bar-top, 0px) - var(--bar-bottom, 0px)), 1200px); border: 1px solid #777; box-shadow: 0 0 0 1px #181818; }
 .action-bar { display: flex; flex-direction: column; gap: 1px; padding: 0; overflow: auto; border: 0; }
 .action-bar button { flex: 0 0 32px; width: 32px; height: 32px; }
 .action-bar button, .slot, .slot.empty { border-radius: 0; background: #3c3c3c url("opentibia/ui/item.png") center / 100% 100%; box-shadow: none; border: 1px solid #646464; }
@@ -342,7 +353,7 @@ h1 { font: bold 14px Arial, sans-serif; }
 .journal { flex: 1; background: #444 url("opentibia/ui/panel_content.png") center / 100% 100%; padding: 0 2px 2px; }
 .journal-heading { min-height: 20px; padding: 1px; }
 .console-tabs button, .game-saving button { font-size: 10px; padding: 2px 5px; border-radius: 0; }
-#journal { height: 81px; margin: 1px 0 0; background: #3a3a3a; border: 1px solid #646464; color: #e4e3df; }
+#journal { height: var(--console-height, 81px); margin: 1px 0 0; background: #3a3a3a; border: 1px solid #646464; color: #e4e3df; }
 #journal li[data-channel="loot"] { color: #9dd881; }
 .minimap-body { display: grid; grid-template-columns: minmax(0, 1fr) 19px; gap: 2px; padding: 3px; }
 #minimap { margin: 0; width: 100%; height: auto; align-self: center; background: #161616; }
@@ -402,24 +413,100 @@ h1 { font: bold 14px Arial, sans-serif; }
 .window-toggle:hover:not(:disabled) { background: url("opentibia/ui/miniwindow_buttons.png") 0 -14px; }
 .window-toggle[aria-expanded="false"] { background-position: -14px 0; }
 .panel[data-collapsed] > :not(.panel-heading) { display: none !important; }
-.client[data-editing] .layout { grid-template-columns: minmax(0, 1fr) 224px; }
-.client[data-editing] .game-screen { grid-template-columns: minmax(0, 1fr); }
+.client[data-editing] .layout { grid-template-columns: minmax(0, 1fr) 224px; grid-template-areas: "game right"; }
+.client[data-editing] [data-window]:not([data-window="map"]),
+.client[data-editing] :is(.bar-dock, .dock-resize, .panel-resize, .window-toggle, #console-divider) { display: none; }
+.client[data-editing] .game-screen { display: block; }
 @media (max-width: 1050px) {
   .layout { grid-template-columns: 134px minmax(0, 1fr) 158px; }
-  #tracking-dock { grid-row: 2; grid-column: 1; max-height: none; }
+  .layout { grid-template-areas: "left game right" "tracking game right"; }
+  #tracking-dock { max-height: none; }
 }
 @media (max-width: 760px) {
   .layout, .client[data-editing] .layout { grid-template-columns: minmax(0, 1fr); }
-  .game-panel { grid-row: 1; }
-  .sidebar { grid-row: 2; }
-  #tracking-dock, #left-dock { grid-column: 1; grid-row: auto; }
+  .client[data-editing] .layout { grid-template-areas: "game" "right"; }
+  .layout { grid-template-areas: "game" "right" "tracking" "left"; }
   .dock { max-height: none; }
-  .game-screen { grid-template-columns: minmax(0, 1fr) 21px; }
   .viewport { height: clamp(295px, 52dvh, 530px); }
-  .action-bar { grid-row: 2; flex-direction: row; }
-  .status-rail { grid-row: 1 / 3; grid-column: 2; }
-  #action-bar-right { grid-row: 3; grid-column: 1; }
   .client[data-editing] .game-screen { display: block; }
   .minimap-body { grid-template-columns: minmax(0, 220px) 19px; }
   .equipment-slots { margin: 3px auto; }
+}
+
+#reset-layout { padding: 2px 5px; font-size: 11px; border-radius: 1px; }
+.dock { position: relative; }
+.dock-resize {
+  position: absolute; z-index: 2; inset: 0 auto 0 0; width: 5px;
+  height: 100%; padding: 0; border: 0; border-radius: 0; background: transparent;
+  cursor: ew-resize; touch-action: none;
+}
+#left-dock > .dock-resize { left: auto; right: 0; }
+.dock-resize:hover:not(:disabled), .panel-resize:hover:not(:disabled), .bar-resize:hover:not(:disabled),
+#console-divider > button:hover:not(:disabled) { background: #a78f5e; }
+[data-window] {
+  position: relative; display: flex; flex-direction: column;
+  height: var(--panel-height, auto); padding-bottom: 6px;
+}
+[data-window] .panel-heading { flex: 0 0 auto; cursor: grab; touch-action: none; user-select: none; }
+[data-window] .panel-heading:active, .bar-grip:active { cursor: grabbing; }
+[data-window] .panel-content { overflow: auto; min-height: 0; }
+[data-window][data-collapsed] { padding-bottom: 0; }
+.panel-resize {
+  position: absolute; inset: auto 0 0; width: 100%; height: 6px; border: 0; border-radius: 0; padding: 0;
+  cursor: ns-resize; touch-action: none; background: linear-gradient(transparent 2px, #707070 2px 3px, #383838 3px 4px, transparent 4px);
+}
+[data-window][data-layout-over] { box-shadow: 0 -2px #e4c586; }
+.dock[data-layout-over], .action-window[data-layout-over] { outline: 1px solid #e4c586; outline-offset: -2px; }
+.layout-ghost {
+  pointer-events: none; position: fixed; z-index: 50;
+  border: 1px solid #c9aa73; padding: 4px 7px; color: #f1e3bd; background: #41403b;
+}
+.viewport { grid-area: map; min-width: 0; }
+.status-rail { grid-area: rail; }
+.bar-dock { display: flex; min-width: 0; min-height: 0; overflow: hidden; }
+.bar-dock[data-empty] { display: none; }
+.bar-dock[data-bar-edge="left"] { grid-area: bar-left; }
+.bar-dock[data-bar-edge="right"] { grid-area: bar-right; }
+.bar-dock[data-bar-edge="top"] { grid-area: top; }
+.bar-dock[data-bar-edge="bottom"] { grid-area: bottom; }
+.bar-dock[data-bar-edge="top"], .bar-dock[data-bar-edge="bottom"] { flex-direction: column; }
+.action-window { display: flex; flex-direction: column; position: relative; min-width: 0; min-height: 0; }
+.action-window .action-bar { flex: 1; min-width: 0; min-height: 0; }
+.action-window .action-bar button { flex-basis: var(--action-size); width: var(--action-size); height: var(--action-size); }
+.action-window .action-bar canvas { width: min(30px, calc(var(--action-size) - 8px)); height: min(30px, calc(var(--action-size) - 8px)); }
+.bar-grip, .bar-resize { border-radius: 0; border: 1px solid #626262; padding: 0; touch-action: none; background: #505050; }
+.bar-grip { font: 700 11px/1 Arial, sans-serif; cursor: grab; height: 15px; flex: 0 0 15px; }
+.bar-resize { cursor: ew-resize; width: 7px; position: absolute; inset: 0 0 0 auto; }
+.bar-dock:is([data-bar-edge="left"], [data-bar-edge="right"]) .action-window { padding-right: 8px; }
+.bar-dock[data-bar-edge="right"] .action-window { padding: 0 0 0 8px; }
+.bar-dock[data-bar-edge="right"] .bar-resize { right: auto; left: 0; }
+.bar-dock:is([data-bar-edge="top"], [data-bar-edge="bottom"]) .action-window {
+  flex-direction: row; min-height: calc(var(--action-size) + 8px); padding-bottom: 8px;
+}
+.bar-dock:is([data-bar-edge="top"], [data-bar-edge="bottom"]) .action-bar { flex-direction: row; }
+.bar-dock:is([data-bar-edge="top"], [data-bar-edge="bottom"]) .bar-resize {
+  width: 100%; height: 7px; inset: auto 0 0; cursor: ns-resize;
+}
+.bar-dock[data-bar-edge="bottom"] .action-window { padding: 8px 0 0; }
+.bar-dock[data-bar-edge="bottom"] .bar-resize { inset: 0 0 auto; }
+.game-screen[data-bar-over="left"] .viewport { border-left-color: #f0cc87; box-shadow: inset 3px 0 #f0cc87; }
+.game-screen[data-bar-over="right"] .viewport { border-right-color: #f0cc87; box-shadow: inset -3px 0 #f0cc87; }
+.game-screen[data-bar-over="top"] .viewport { border-top-color: #f0cc87; box-shadow: inset 0 3px #f0cc87; }
+.game-screen[data-bar-over="bottom"] .viewport { border-bottom-color: #f0cc87; box-shadow: inset 0 -3px #f0cc87; }
+#console-divider > button {
+  display: block; width: 100%; height: 6px; border: 0; border-radius: 0; padding: 0;
+  cursor: ns-resize; touch-action: none; background: linear-gradient(#686868 1px, #444 1px 4px, #747474 4px 5px, #333 5px);
+}
+@media (max-width: 1050px) {
+  .dock-resize { display: none; }
+}
+@media (max-width: 760px) {
+  .game-screen {
+    grid-template-columns: minmax(0, 1fr) 21px;
+    grid-template-areas: "top top" "map rail" "bar-left bar-left" "bar-right bar-right" "bottom bottom";
+  }
+  .bar-dock { flex-direction: column; }
+  .bar-dock[data-bar-edge] .action-window { flex-direction: row; padding: 0 0 8px; min-height: calc(var(--action-size) + 8px); }
+  .bar-dock .action-bar { flex-direction: row; }
+  .bar-dock[data-bar-edge] .bar-resize { width: 100%; height: 7px; inset: auto 0 0; cursor: ns-resize; }
 }

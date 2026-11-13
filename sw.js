@@ -2,7 +2,8 @@
 
 const root = new URL("./", self.location.href);
 const cachePrefix = `arda:${root.pathname}:`;
-const cacheName = `${cachePrefix}11`;
+const release = 12;
+const cacheName = `${cachePrefix}${release}`;
 const files = [
   "index.html",
   "style.css",
@@ -51,11 +52,29 @@ const files = [
 const assets = new Set(files.map(file => new URL(file, root).href));
 const home = new URL("index.html", root).href;
 
+function versioned(asset) {
+  const url = new URL(asset);
+  url.searchParams.set("arda-release", release);
+  return url.href;
+}
+
 self.addEventListener("install", event => {
   event.waitUntil((async () => {
     const cache = await caches.open(cacheName);
-    await cache.addAll([...assets].map(url => new Request(url, { cache: "reload" })));
+    await cache.addAll([...assets].map(asset => new Request(versioned(asset), { cache: "reload" })));
+    const page = await cache.match(versioned(home));
+    const html = (await page.text()).replace(/\b(src|href)="([^"]+)"/g, (attribute, name, value) => {
+      const asset = new URL(value, home);
+      return assets.has(asset.href) ? `${name}="${value}?arda-release=${release}"` : attribute;
+    });
+    await cache.put(versioned(home), new Response(html, { headers: { "Content-Type": "text/html; charset=utf-8" } }));
+    // Older clients cannot request activation. They pick up this first update on a normal reload.
+    if (release === 12) await self.skipWaiting();
   })());
+});
+
+self.addEventListener("message", event => {
+  if (event.data === "activate-update") event.waitUntil(self.skipWaiting());
 });
 
 self.addEventListener("activate", event => {
@@ -71,10 +90,11 @@ self.addEventListener("fetch", event => {
   const url = new URL(event.request.url);
   const isHome = event.request.mode === "navigate" && url.origin === root.origin &&
     (url.pathname === root.pathname || url.pathname === new URL(home).pathname);
+  if (url.searchParams.has("arda-release")) url.searchParams.delete("arda-release");
   const key = isHome ? home : url.href;
   if (!assets.has(key)) return;
   event.respondWith((async () => {
     const cache = await caches.open(cacheName);
-    return await cache.match(key) ?? fetch(event.request);
+    return await cache.match(versioned(key)) ?? fetch(event.request);
   })());
 });

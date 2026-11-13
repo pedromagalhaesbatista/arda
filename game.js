@@ -239,6 +239,64 @@
     return confirm("The current session could not be saved. Switch and leave those changes behind?");
   }
 
+  function watchForUpdates() {
+    const workers = navigator.serviceWorker;
+    const interval = 60000;
+    let controller = workers.controller;
+    let registration;
+    let needsReload = false;
+    let checking = false;
+    let lastCheck = -Infinity;
+    let lastInput = performance.now();
+
+    function applyUpdate() {
+      if (!needsReload && !(controller && registration?.waiting)) return;
+      if (document.hidden || edit || !saveKey || target || path.length || pendingInteraction || player.motion || held.size ||
+          practice || merchant || openLoot || document.querySelector("dialog[open]") ||
+          performance.now() - lastInput < 3000) return;
+      if (!saveProgress(true)) return;
+      // Check again when the worker takes control. Play may have resumed in the meantime.
+      if (needsReload) location.reload();
+      else registration.waiting?.postMessage("activate-update");
+    }
+
+    async function checkForUpdate() {
+      applyUpdate();
+      const now = performance.now();
+      if (!registration || checking || document.hidden || !navigator.onLine || now - lastCheck < 5000) return;
+      checking = true;
+      lastCheck = now;
+      try {
+        await registration.update();
+      } catch {
+        // Keep the installed version if the site cannot be reached.
+      } finally {
+        checking = false;
+      }
+      applyUpdate();
+    }
+
+    workers.addEventListener("controllerchange", () => {
+      const next = workers.controller;
+      if (controller && next && controller !== next) needsReload = true;
+      controller = next;
+      applyUpdate();
+    });
+    workers.register("./sw.js", { updateViaCache: "none" }).then(result => {
+      registration = result;
+      checkForUpdate();
+      setInterval(checkForUpdate, interval);
+      setInterval(applyUpdate, 1000);
+      document.addEventListener("visibilitychange", checkForUpdate);
+      window.addEventListener("focus", checkForUpdate);
+      window.addEventListener("online", checkForUpdate);
+    }).catch(error => console.warn("Offline cache unavailable", error));
+
+    for (const type of ["keydown", "pointerdown", "input"]) {
+      document.addEventListener(type, () => { lastInput = performance.now(); }, true);
+    }
+  }
+
   function compatibleRevisions() {
     return selectedWorld === "shire" ? Shire.previousRevisions : [];
   }
@@ -2688,6 +2746,6 @@
     journal("The OpenTibia sprite pack could not be loaded.");
   });
   if (location.protocol !== "file:" && "serviceWorker" in navigator) {
-    navigator.serviceWorker.register("./sw.js").catch(error => console.warn("Offline cache unavailable", error));
+    watchForUpdates();
   }
 })();

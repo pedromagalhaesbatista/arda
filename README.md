@@ -4,7 +4,7 @@
 
 Choose **The Shire and Its Neighbours** from the World menu. Use **Open regional map** below the minimap to see the full area and choose a destination. The East Road runs through the Shire to Bree-town. The northern roads reach Evendim, and the western road leads to the settlements along the Lune. Cross the Brandywine by bridge or use the Bucklebury Ferry landing near Stock. The regional geography follows Norlackale of Laurelin’s *The Shire and Its Neighbours, T.A. 3018*, supplied as a map reference.
 
-The site can reopen offline after the first successful online visit and cache setup. Character progress saves in the current browser. Use **Export save** and **Import save** to move it between the local game and the website. For a custom world, export and import its map in the editor first.
+The site can reopen offline after the first successful online visit and cache setup. When online, the game checks for updates automatically and reloads after saving your progress when you are idle in Play mode. Character progress saves in the current browser. Use **Export save** and **Import save** to move it between the local game and the website. For a custom world, export and import its map in the editor first.
 
 Open **Characters** to switch between saved characters in the current world or create one with a name and vocation. Your existing save appears as the first character. Each character has its own equipment, skills, quests, position, loot, and hotkeys. **Import save** replaces the active character’s slot after confirmation.
 

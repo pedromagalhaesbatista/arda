@@ -8,6 +8,8 @@ Click the minimap to walk. In **Classic controls**, right-click to use or attack
 
 Click a spell in the **Spellbook**, type its words into the console, or drag its icon onto an action slot. Attack spells need a target from the Battle List or the map. Each cast spends mana and trains magic level. Mana regenerates during play. Equip a sword or shield and use **Training** at the map’s starting point to practise between fights. Skill progress and mana save with your character.
 
+Open **Choose a vocation** in **Skills** to become a Knight, Paladin, Monk, Druid, or Sorcerer. Each vocation changes spell access, health and mana growth, and how quickly skills improve. Paladins receive a shortbow for distance fighting. Monks can fight and train unarmed. You can choose once per character. Existing characters keep their level, equipment, skills, and quests when they choose.
+
 Drag panel headings between the three sidebars. Drag an action bar by its grip to dock it on any edge of the map. Resize panels from the bottom, desktop sidebars from the inner edge, and the console from the divider above it. The browser saves your layout automatically. **Reset layout** restores the default positions and sizes.
 
 To play directly from disk, open `index.html` in Chrome. The game needs no build step. GitHub Pages publishes the root of `main`. Increase the cache version in `sw.js` when releasing changes to the game files.

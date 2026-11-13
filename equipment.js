@@ -15,6 +15,7 @@ const Equipment = (() => {
     boots: { name: "Leather boots", slot: "feet", armor: 1 },
     sword: { name: "Iron sword", slot: "weapon", attack: 10, defense: 4 },
     broadsword: { name: "Bree broadsword", slot: "weapon", attack: 17, defense: 6 },
+    bow: { name: "Shortbow", slot: "weapon", attack: 9, defense: 2, skill: "distance", range: 4 },
     buckler: { name: "Wooden buckler", slot: "shield", defense: 9 },
     pendant: { name: "Ranger’s pendant", slot: "amulet", armor: 1 },
     ring: { name: "Iron ring", slot: "ring", armor: 1 },
@@ -58,6 +59,7 @@ const Equipment = (() => {
     const parts = [item.name];
     if (item.slot && item.slot !== "pack") parts.push(slots[item.slot]);
     if (item.attack) parts.push(`Attack ${item.attack}`);
+    if (item.range) parts.push(`Range ${item.range}`);
     if (item.defense) parts.push(`Defense ${item.defense}`);
     if (item.armor) parts.push(`Armor ${item.armor}`);
     if (item.healing) parts.push(`Restores up to ${item.healing} health`);
@@ -91,17 +93,28 @@ const Combat = (() => {
     return min + Math.floor(Math.random() * (max - min + 1));
   }
 
+  function weaponSkill(kit) {
+    if (!kit.worn.weapon) return "fist";
+    return Equipment.items[kit.worn.weapon].skill ?? "sword";
+  }
+
+  function attackRating(player, gear = Equipment.stats(player.kit)) {
+    return player.vocation === "monk" && !player.kit.worn.weapon ? 10 : gear.attack;
+  }
+
   function attack(player) {
     const gear = Equipment.stats(player.kit);
-    const skill = player.kit.worn.weapon ? player.sword.level : 10;
+    const weapon = weaponSkill(player.kit);
+    const skill = player[weapon]?.level ?? 10;
+    const attack = attackRating(player, gear);
     const stance = stances[player.stance];
-    const max = Math.round(Math.floor(player.level / 5) + (skill / 4 + 1) * (gear.attack / 3) * 1.03 / stance.attack);
+    const max = Math.round(Math.floor(player.level / 5) + (skill / 4 + 1) * (attack / 3) * 1.03 / stance.attack);
     return roll(0, max);
   }
 
   function mitigate(player, damage, swinging) {
     const gear = Equipment.stats(player.kit);
-    const skill = player.kit.worn.shield ? player.shielding.level : player.kit.worn.weapon ? player.sword.level : 10;
+    const skill = player.kit.worn.shield ? player.shielding.level : player[weaponSkill(player.kit)]?.level ?? 10;
     const factor = swinging ? stances[player.stance].defense : 1;
     const defense = Math.floor((skill / 4 + 2.23) * gear.defense * 0.15 * factor);
     const remainder = damage - roll(Math.floor(defense / 2), defense);
@@ -121,5 +134,5 @@ const Combat = (() => {
     return skill.level !== level;
   }
 
-  return { swingInterval, attack, mitigate, train, roll };
+  return { swingInterval, weaponSkill, attackRating, attack, mitigate, train, roll };
 })();

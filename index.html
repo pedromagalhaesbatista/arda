@@ -11,6 +11,7 @@
   <script defer src="world.js"></script>
   <script defer src="shire.js"></script>
   <script defer src="art.js"></script>
+  <script defer src="vocations.js"></script>
   <script defer src="equipment.js"></script>
   <script defer src="magic.js"></script>
   <script defer src="saves.js"></script>
@@ -40,6 +41,17 @@
       <aside id="left-dock" class="dock" aria-label="Character panels">
         <section class="panel character" data-window="skills">
           <div class="panel-heading"><h3><img src="opentibia/ui/skills.png" alt="">Skills</h3><span id="level">Level 1</span></div>
+          <div class="vocation">
+            <div class="stat"><span>Vocation</span><strong id="vocation-name">Adventurer</strong></div>
+            <details id="vocation-chooser">
+              <summary>Choose a vocation</summary>
+              <form id="vocation-form">
+                <select id="vocation-select" aria-label="Vocation" aria-describedby="vocation-details"></select>
+                <p id="vocation-details"></p>
+                <button type="submit">Confirm vocation</button>
+              </form>
+            </details>
+          </div>
           <div class="vitals">
             <div class="vital-label"><span>Health</span><span id="health-value">30 / 30</span></div>
             <div class="meter health"><span id="health-fill"></span></div>
@@ -61,6 +73,14 @@
               <div class="stat"><span>Shielding</span><strong id="shield-skill">10</strong></div>
               <progress id="shield-progress" aria-label="Shielding progress" max="8" value="0"></progress>
             </div>
+            <div id="distance-skill-row" hidden>
+              <div class="stat"><span>Distance fighting</span><strong id="distance-skill">10</strong></div>
+              <progress id="distance-progress" aria-label="Distance fighting progress" max="8" value="0"></progress>
+            </div>
+            <div id="fist-skill-row" hidden>
+              <div class="stat"><span>Fist fighting</span><strong id="fist-skill">10</strong></div>
+              <progress id="fist-progress" aria-label="Fist fighting progress" max="8" value="0"></progress>
+            </div>
           </div>
         </section>
         <section class="panel" data-window="training">
@@ -69,6 +89,8 @@
           <div id="training-controls" class="training-controls" role="group" aria-label="Practice skill">
             <button type="button" data-practice="sword" aria-pressed="false">Sword</button>
             <button type="button" data-practice="shielding" aria-pressed="false">Shield</button>
+            <button type="button" id="train-distance" data-practice="distance" aria-pressed="false" hidden>Bow</button>
+            <button type="button" id="train-fist" data-practice="fist" aria-pressed="false" hidden>Fist</button>
           </div>
         </section>
         <section class="panel" data-window="hunt">

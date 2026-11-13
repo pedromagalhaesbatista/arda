@@ -35,14 +35,15 @@ const Saves = (() => {
   }
 
   function skillValid(skill, minimum = 10) {
-    return record(skill) && integer(skill.level, minimum) && integer(skill.goal, 1) && integer(skill.tries, 0, skill.goal - 1);
+    return record(skill) && integer(skill.level, minimum) && integer(skill.goal, 1) &&
+      Number.isFinite(skill.tries) && Number.isInteger(skill.tries * 4) && skill.tries >= 0 && skill.tries < skill.goal;
   }
 
   function magicValid(player) {
-    if (!["mana", "magic", "spellState"].some(field => Object.hasOwn(player, field))) return true;
-    const { mana, magic, spellState } = player;
-    if (!integer(mana, 0, Magic.maxMana(player.level)) || !skillValid(magic, 0) || !record(spellState) ||
-        !integer(spellState.light, 0, Magic.lightDuration) || !integer(spellState.regen, 0, Magic.manaInterval - 1) ||
+    const { mana, magic, spellState, vocation } = player;
+    if (!vocation && !["mana", "magic", "spellState"].some(field => Object.hasOwn(player, field))) return true;
+    if (!integer(mana, 0, Vocations.maxMana(player.level, vocation)) || !skillValid(magic, 0) || !record(spellState) ||
+        !integer(spellState.light, 0, Magic.lightDuration) || !integer(spellState.regen, 0, Vocations.get(vocation).regen - 1) ||
         !record(spellState.cooldowns)) return false;
     return Object.entries(spellState.cooldowns).every(([id, time]) => {
       const limit = Object.hasOwn(Magic.spells, id) ? Magic.spells[id].cooldown :
@@ -54,6 +55,9 @@ const Saves = (() => {
   function valid(value, map, entities) {
     if (!record(value) || value.version !== 1 || !record(value.player)) return false;
     const { player, quest, ratsDefeated, hasLedger, creatures, loot } = value;
+    if (player.vocation != null && (typeof player.vocation !== "string" || !Object.hasOwn(Vocations.classes, player.vocation) ||
+        !skillValid(player.fist) || !skillValid(player.distance))) return false;
+    if (["fist", "distance"].some(skill => Object.hasOwn(player, skill) && !skillValid(player[skill]))) return false;
     if (!position(map, player) || !integer(player.level, 1) || !integer(player.maxHp, 30) ||
         !integer(player.hp, 1, player.maxHp) || !integer(player.xp, 0, player.level * 18 - 1) ||
         !integer(player.face, 0, 3) || !["offensive", "balanced", "defensive"].includes(player.stance) ||

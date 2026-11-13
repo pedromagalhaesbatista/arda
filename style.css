@@ -355,6 +355,11 @@ h1 { font: bold 14px Arial, sans-serif; }
 .training-controls { display: flex; gap: 3px; padding: 0 4px 4px; }
 .training-controls button { flex: 1; padding: 2px; font-size: 11px; }
 .training-controls button[aria-pressed="true"] { border-color: #dbbe83; color: #ffdb9a; }
+.vocation { padding: 3px 5px; border-bottom: 1px solid var(--line); }
+.vocation summary { cursor: pointer; color: #e2c48a; }
+#vocation-form { display: grid; gap: 4px; padding: 4px 0; }
+#vocation-form select, #vocation-form button { min-width: 0; padding: 2px 4px; font-size: 11px; }
+#vocation-details { margin: 0; color: #ded8c3; line-height: 1.4; font-size: 11px; }
 #spell-list { display: grid; gap: 1px; list-style: none; padding: 2px; margin: 0; }
 .spell-entry {
   display: grid; grid-template-columns: 22px minmax(0, 1fr); gap: 4px; align-items: center;
@@ -372,6 +377,7 @@ h1 { font: bold 14px Arial, sans-serif; }
   content: attr(data-cooldown); position: absolute; inset: 0; display: grid; place-items: center;
   background: #191b24b5; color: white; font-size: 11px;
 }
+.action-bar button[data-unavailable] .spell-icon { opacity: .45; }
 .spell-console { display: flex; gap: 2px; margin-top: 2px; }
 .spell-console input {
   flex: 1; min-width: 0; padding: 2px 5px; border: 1px solid #646464; border-radius: 0;

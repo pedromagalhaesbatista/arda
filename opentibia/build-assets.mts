@@ -23,7 +23,7 @@ const objects = {
   partyTree: 1506, appleTree: 1519, hedge: 1480, reeds: 1465, bench: 1190, basket: 1109, hearth: 1121,
 };
 const items = {
-  sword: 1689, broadsword: 1694, buckler: 1915, cap: 1943, tunic: 2010,
+  sword: 1689, broadsword: 1694, bow: 1873, buckler: 1915, cap: 1943, tunic: 2010,
   trousers: 2079, boots: 2091, pack: 2099, pendant: 2139, ring: 2147, shireRing: 2148,
   herb: 1455, coin: 1187, link: 1005, ledger: 1904,
 };

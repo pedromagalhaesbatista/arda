@@ -9,6 +9,13 @@
   const tile = Art.size;
 
   const creatureNames = { rat: "Cellar rat", wolf: "Wolf" };
+  const skills = {
+    sword: { label: "sword fighting", value: "skill", meter: "sword-progress", requirement: "Equip a sword" },
+    shielding: { label: "shielding", value: "shield-skill", meter: "shield-progress", requirement: "Equip a shield" },
+    distance: { label: "distance fighting", value: "distance-skill", meter: "distance-progress", requirement: "Equip a bow" },
+    fist: { label: "fist fighting", value: "fist-skill", meter: "fist-progress", requirement: "Stow your weapon" },
+    magic: { label: "magic", value: "magic-level", meter: "magic-progress" },
+  };
   const markerActions = { keeper: "Talk", miller: "Talk", gardener: "Talk", ledger: "Take", notice: "Read" };
   const movement = {
     w: [0, -1], a: [-1, 0], s: [0, 1], d: [1, 0],
@@ -119,7 +126,8 @@
     player = {
       ...start, hp: 30, maxHp: 30, xp: 0, level: 1, face: OpenTibia.Direction.South,
       kit: Equipment.starterKit(), stance: "balanced", pursuit: "stand",
-      sword: { level: 10, tries: 0, goal: 8 }, shielding: { level: 10, tries: 0, goal: 8 },
+      vocation: null, sword: Vocations.starterSkill(), shielding: Vocations.starterSkill(),
+      distance: Vocations.starterSkill(), fist: Vocations.starterSkill(),
       ...Magic.starter(),
     };
     trainingPoint = start;
@@ -165,13 +173,17 @@
     const floor = currentFloor();
     const steppingIntoLink = player.motion && floor.markers[World.key(player.x, player.y)]?.type === "link";
     const position = steppingIntoLink ? player.motion.from : player;
-    const { z, hp, maxHp, xp, level, face, kit, stance, pursuit, sword, shielding, mana, magic, spellState } = player;
+    const { z, hp, maxHp, xp, level, face, kit, stance, pursuit, vocation, sword, shielding, distance, fist, mana, magic, spellState } = player;
     const creatures = Object.fromEntries(entities.filter(entity => creatureNames[entity.type]).map(entity => {
       const { x, y, z, hp, face } = entity;
       return [Saves.actorKey(entity), { x, y, z, hp, face }];
     }));
     return {
-      version: 1, player: { x: position.x, y: position.y, z, hp, maxHp, xp, level, face, kit, stance, pursuit, sword, shielding, mana, magic, spellState },
+      version: 1,
+      player: {
+        x: position.x, y: position.y, z, hp, maxHp, xp, level, face, kit, stance, pursuit,
+        vocation, sword, shielding, distance, fist, mana, magic, spellState,
+      },
       quest, ratsDefeated, hasLedger, creatures, loot,
     };
   }
@@ -484,7 +496,7 @@
 
   function updatePlayPanel() {
     const goal = player.level * 18;
-    const maxMana = Magic.maxMana(player.level);
+    const maxMana = Vocations.maxMana(player.level, player.vocation);
     $("level").textContent = `Level ${player.level}`;
     $("health-value").textContent = `${player.hp} / ${player.maxHp}`;
     $("health-fill").style.width = `${player.hp / player.maxHp * 100}%`;
@@ -502,15 +514,24 @@
       meter.lastElementChild.textContent = `${value}/${max}`;
     }
     updateBestiary();
-    $("skill").textContent = player.sword.level;
-    $("shield-skill").textContent = player.shielding.level;
-    $("magic-level").textContent = player.magic.level;
-    for (const [id, skill] of [["sword-progress", player.sword], ["shield-progress", player.shielding], ["magic-progress", player.magic]]) {
-      const meter = $(id);
+    for (const [id, { value, meter: meterId }] of Object.entries(skills)) {
+      const skill = player[id];
+      $(value).textContent = skill.level;
+      const meter = $(meterId);
       meter.max = skill.goal;
       meter.value = skill.tries;
-      meter.title = `${skill.tries} / ${skill.goal} · ${Math.floor(skill.tries / skill.goal * 100)}%`;
+      const rate = Vocations.rate(player.vocation, id);
+      meter.title = `${skill.tries} / ${skill.goal} · ${Math.floor(skill.tries / skill.goal * 100)}% · ${rate}× training`;
     }
+    $("vocation-name").textContent = Vocations.get(player.vocation).name;
+    $("vocation-chooser").hidden = !!player.vocation;
+    const weaponSkill = Combat.weaponSkill(player.kit);
+    for (const [skill, vocation] of [["distance", "paladin"], ["fist", "monk"]]) {
+      const relevant = player.vocation === vocation || weaponSkill === skill || player[skill].level > 10 || player[skill].tries > 0;
+      $(`${skill}-skill-row`).hidden = !relevant;
+      $(`train-${skill}`).hidden = !relevant;
+    }
+    updateSpellStatus();
     updateTrainingPanel();
     for (const [id, key] of [["stances", "stance"], ["pursuit", "pursuit"]]) {
       for (const button of $(id).children) {
@@ -547,6 +568,43 @@
       message.textContent = "No creatures nearby";
       list.append(message);
     }
+  }
+
+  function updateVocationPreview() {
+    const id = $("vocation-select").value;
+    const vocation = Vocations.classes[id];
+    $("vocation-form").querySelector("button").disabled = !vocation;
+    if (!vocation) {
+      $("vocation-details").textContent = "Choose once for this character.";
+      return;
+    }
+    const spells = Object.values(Magic.spells).filter(spell => spell.classes?.includes(id));
+    $("vocation-details").textContent =
+      `${vocation.specialty}. +${vocation.hp} health and +${vocation.mana} mana per level. ${spells.map(spell => spell.name).join(", ")}.`;
+  }
+
+  function chooseVocation(id) {
+    if (edit || player.vocation || !Object.hasOwn(Vocations.classes, id)) return;
+    const vocation = Vocations.get(id);
+    if (!confirm(`Become a ${vocation.name}? This is a permanent choice for this character.`)) return;
+    advanceMagic(performance.now(), true);
+    const previous = Vocations.get(player.vocation);
+    player.mana += Vocations.maxMana(player.level, id) - Vocations.maxMana(player.level, player.vocation);
+    player.spellState.regen = Math.floor(player.spellState.regen * vocation.regen / previous.regen);
+    player.vocation = id;
+    if (id === "paladin") {
+      if (player.kit.worn.weapon !== "bow") {
+        if (!player.kit.bag.bow) Equipment.add(player.kit, "bow");
+        Equipment.equip(player.kit, "bow");
+      }
+    }
+    if (id === "monk") Equipment.stow(player.kit, "weapon");
+    stopActions();
+    inventoryChanged();
+    journal(`You became a ${vocation.name}.`);
+    $("vocation-chooser").open = false;
+    canvas.focus({ preventScroll: true });
+    saveProgress(true);
   }
 
   function inventoryChanged() {
@@ -651,7 +709,7 @@
     const backpack = $("slots");
     const focused = document.activeElement.dataset.item;
     const gear = Equipment.stats(player.kit);
-    $("gear-attack").textContent = gear.attack;
+    $("gear-attack").textContent = Combat.attackRating(player, gear);
     $("gear-defense").textContent = gear.defense;
     $("gear-armor").textContent = gear.armor;
     const coins = bag.coin ?? 0;
@@ -1202,15 +1260,19 @@
       !entities.some(entity => creatureNames[entity.type] && entity.hp > 0 && entity.z === player.z && distance(player, entity) <= 4);
   }
 
+  function canTrain(skill) {
+    return skill === "shielding" ? !!player.kit.worn.shield : Combat.weaponSkill(player.kit) === skill;
+  }
+
   function updateTrainingPanel() {
     const available = canPractice();
     $("training-status").textContent = practice ? "Practising every 2s · Esc to stop" :
       available ? "Practise at the starting point." : "Return to the starting point away from enemies.";
     for (const button of $("training-controls").children) {
       const skill = button.dataset.practice;
-      const gear = skill === "sword" ? "weapon" : "shield";
-      button.disabled = !available || !player.kit.worn[gear];
-      button.title = player.kit.worn[gear] ? "" : `Equip a ${gear} to practise`;
+      const equipped = canTrain(skill);
+      button.disabled = !available || !equipped;
+      button.title = equipped ? "" : skills[skill].requirement;
       button.setAttribute("aria-pressed", String(practice === skill));
     }
   }
@@ -1221,19 +1283,21 @@
     needsRefresh = true;
   }
 
-  function trainSkill(skill, label) {
-    if (Combat.train(player[skill])) journal(`You advanced to ${label} level ${player[skill].level}.`);
+  function trainSkill(skill) {
+    if (Combat.train(player[skill], Vocations.rate(player.vocation, skill))) {
+      journal(`You advanced to ${skills[skill].label} level ${player[skill].level}.`);
+    }
   }
 
   function practise(now) {
     if (!practice) return;
-    const sword = practice === "sword";
-    if (!canPractice() || !player.kit.worn[sword ? "weapon" : "shield"]) return stopPractice();
+    const blocking = practice === "shielding";
+    if (!canPractice() || !canTrain(practice)) return stopPractice();
     if (now < nextPractice) return;
     nextPractice = now + Combat.swingInterval;
-    const successful = sword ? Combat.attack(player) > 0 : Combat.mitigate(player, Combat.roll(2, 4), false).blocked;
-    if (successful) trainSkill(practice, sword ? "sword fighting" : "shielding");
-    showCombatText(player, successful ? (sword ? "Practice hit" : "Practice block") : "Try again", "#e3d0a1", now);
+    const successful = blocking ? Combat.mitigate(player, Combat.roll(2, 4), false).blocked : Combat.attack(player) > 0;
+    if (successful) trainSkill(practice);
+    showCombatText(player, successful ? (blocking ? "Practice block" : "Practice hit") : "Try again", "#e3d0a1", now);
     needsRefresh = true;
   }
 
@@ -1273,15 +1337,19 @@
       info.append(name, words, status);
       entry.append(button, info);
       $("spell-list").append(entry);
-      spellRows.set(id, status);
+      spellRows.set(id, { entry, status });
     }
   }
 
   function updateSpellStatus() {
-    for (const [id, status] of spellRows) {
+    for (const [id, { entry, status }] of spellRows) {
       const spell = Magic.spells[id];
+      const hidden = !Magic.canLearn(spell, player.vocation);
+      if (entry.hidden !== hidden) entry.hidden = hidden;
+      if (hidden) continue;
       const seconds = Math.ceil(Magic.remaining(player, id) / 1000);
       let label = spell.range ? `Range ${spell.range}` : spell.group === "support" ? "45s light" : "Self heal";
+      if (spell.skill) label += ` · ${skills[spell.skill].label}`;
       if (player.level < spell.level) label = `Level ${spell.level}`;
       else if (seconds) label = `${seconds}s cooldown`;
       else if (id === "light" && player.spellState.light) label = `${Math.ceil(player.spellState.light / 1000)}s active`;
@@ -1289,7 +1357,11 @@
       if (status.textContent !== value) status.textContent = value;
     }
     for (const button of document.querySelectorAll("[data-spell-action]")) {
-      const seconds = Math.ceil(Magic.remaining(player, button.dataset.spellAction) / 1000);
+      const id = button.dataset.spellAction;
+      const spell = Magic.spells[id];
+      const unavailable = !Magic.canLearn(spell, player.vocation) || player.level < spell.level;
+      button.toggleAttribute("data-unavailable", unavailable);
+      const seconds = unavailable ? 0 : Math.ceil(Magic.remaining(player, id) / 1000);
       const text = seconds ? `${seconds}s` : "";
       if (text && button.dataset.cooldown !== text) button.dataset.cooldown = text;
       if (!text && button.hasAttribute("data-cooldown")) button.removeAttribute("data-cooldown");
@@ -1311,11 +1383,15 @@
   function castSpell(id) {
     if (edit) return;
     const spell = Magic.spells[id];
+    if (!Magic.canLearn(spell, player.vocation)) return journal(`${spell.name} is unavailable to your vocation.`, "combat");
     const now = performance.now();
     advanceMagic(now, true);
     if (player.level < spell.level) return journal(`${spell.name} requires level ${spell.level}.`, "combat");
     if (Magic.remaining(player, id)) return journal("You are exhausted.", "combat");
     if (player.mana < spell.mana) return journal("You do not have enough mana.", "combat");
+    if (spell.skill && Combat.weaponSkill(player.kit) !== spell.skill) {
+      return journal(`${skills[spell.skill].requirement} to cast ${spell.name}.`, "combat");
+    }
     if (spell.range) {
       if (!target || target.z !== player.z || target.hp <= 0 || distance(player, target) > spell.range) {
         return journal(`Select a target within ${spell.range} tiles.`, "combat");
@@ -1326,19 +1402,19 @@
     }
 
     stopPractice();
-    const power = player.magic.level + Math.floor(player.level / 2);
+    const power = Math.floor(player.level / 2) + (spell.skill ? Math.floor(player[spell.skill].level / 4) : player.magic.level);
     const advanced = Magic.spend(player, id);
     journal(`You say: ${spell.words}`, "combat");
     showSpellEffect(player, "#a5caff", now);
     if (spell.group === "healing") {
-      const restored = Math.min(player.maxHp - player.hp, Combat.roll(7, 10) + power);
+      const restored = Math.min(player.maxHp - player.hp, Combat.roll(...spell.power) + power);
       player.hp += restored;
       hunt.healing += restored;
       showCombatText(player, `+${restored}`, "#a9e2b0", now);
       journal(`You recover ${restored} health.`, "combat");
     } else if (spell.group === "attack") {
-      const damage = (id === "buzz" ? Combat.roll(3, 5) : Combat.roll(7, 10)) + power;
-      showSpellEffect(target, "#82a9ff", now);
+      const damage = Combat.roll(...spell.power) + power;
+      showSpellEffect(target, spell.color ?? "#82a9ff", now);
       hitTarget(damage, now, spell.name);
     } else {
       player.spellState.light = Magic.lightDuration;
@@ -1423,7 +1499,8 @@
         event.preventDefault();
         const presets = [
           ["Attack", "attack"], ["Use healing herb", "herb"], ["Use nearby", "use"], ["Stop", "stop"],
-          ...Object.entries(Magic.spells).map(([key, spell]) => [spell.name, key]), ["Clear slot", null],
+          ...Object.entries(Magic.spells).filter(([, spell]) => Magic.canLearn(spell, player.vocation))
+            .map(([key, spell]) => [spell.name, key]), ["Clear slot", null],
         ];
         showMenu(event, presets.map(([name, action]) => [name, () => setAction(index, action)]));
       });
@@ -1446,12 +1523,22 @@
       World.canStep(map, currentFloor(), actor.x, actor.y, defender.x, defender.y, () => false);
   }
 
+  function canAttack(defender) {
+    const range = Equipment.items[player.kit.worn.weapon]?.range;
+    return range ? distance(player, defender) <= range && World.clearSight(currentFloor(), player, defender) :
+      canStrike(player, defender);
+  }
+
   function hit(now) {
-    if (!target || now < nextAttack || !canStrike(player, target)) return;
+    if (!target || now < nextAttack || !canAttack(target)) return;
     nextAttack = now + Combat.swingInterval;
     player.face = OpenTibia.directionFromStepDelta(target.x - player.x, target.y - player.y, player.face);
     const damage = Combat.attack(player);
-    if (player.kit.worn.weapon && damage > 0) trainSkill("sword", "sword fighting");
+    if (damage > 0) {
+      const skill = Combat.weaponSkill(player.kit);
+      if (skill === "distance") showSpellEffect(target, "#d7cda9", now);
+      trainSkill(skill);
+    }
     hitTarget(damage, now);
   }
 
@@ -1480,12 +1567,17 @@
       hunt.xp += xp;
       if (player.xp >= player.level * 18) {
         player.xp -= player.level * 18;
-        const previousMana = Magic.maxMana(player.level);
+        const vocation = Vocations.get(player.vocation);
         player.level++;
-        player.maxHp += 5;
+        player.maxHp += vocation.hp;
         player.hp = player.maxHp;
-        player.mana += Magic.maxMana(player.level) - previousMana;
+        player.mana += vocation.mana;
         journal(`You reached level ${player.level}.`);
+        if (player.vocation) {
+          for (const spell of Object.values(Magic.spells)) {
+            if (spell.level === player.level && Magic.canLearn(spell, player.vocation)) journal(`You learned ${spell.name}.`);
+          }
+        }
       }
       target = null;
     }
@@ -1522,7 +1614,7 @@
         player.hp -= damage;
         hunt.received += damage;
         const name = creatureNames[entity.type].toLowerCase();
-        if (result.blocked && player.kit.worn.shield) trainSkill("shielding", "shielding");
+        if (result.blocked && player.kit.worn.shield) trainSkill("shielding");
         showCombatText(player, damage || "Block", damage ? "#ff887b" : "#e3d0a1", now);
         if (damage) journal(`The ${name} hits you for ${damage}.`, "combat");
         else if (result.blocked) journal(`You block the ${name}'s attack.`, "combat");
@@ -1586,7 +1678,7 @@
         const run = pendingInteraction;
         pendingInteraction = null;
         run();
-      } else if (target && player.pursuit === "chase" && now >= nextChase && !canStrike(player, target)) {
+      } else if (target && player.pursuit === "chase" && now >= nextChase && !canAttack(target)) {
         nextChase = now + 260;
         const next = adjacentRoute(target, currentFloor(), (x, y) => Boolean(here(x, y)), true)[0];
         if (next) stepPlayer(next.x - player.x, next.y - player.y, now);
@@ -1854,6 +1946,11 @@
       nextPractice = performance.now() + Combat.swingInterval;
     }
     canvas.focus({ preventScroll: true });
+  });
+  $("vocation-select").addEventListener("change", updateVocationPreview);
+  $("vocation-form").addEventListener("submit", event => {
+    event.preventDefault();
+    chooseVocation($("vocation-select").value);
   });
   $("spell-console").addEventListener("submit", event => {
     event.preventDefault();
@@ -2158,6 +2255,11 @@
 
   syncWorldSelect();
   updateMouseHint();
+  $("vocation-select").append(new Option("Select vocation…", "", true, true));
+  for (const [id, vocation] of Object.entries(Vocations.classes)) {
+    $("vocation-select").append(new Option(vocation.name, id));
+  }
+  updateVocationPreview();
   buildSpellbook();
   const initial = resumePlay();
   resize();

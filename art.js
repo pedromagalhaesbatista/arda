@@ -161,6 +161,15 @@ const Art = (() => {
     draw(c, sprites.actors[type], x, y, face, 0, step, 1);
   }
 
+  function corpse(c, type, x, y) {
+    c.save();
+    c.translate(x + size, y + 15);
+    c.scale(.93, .51);
+    c.globalAlpha = .74;
+    actor(c, type, -size, 0, OpenTibia.Direction.East);
+    c.restore();
+  }
+
   function icon(c, id, x = 0, y = 0) {
     if (sprites.items[id]) {
       draw(c, sprites.items[id], x, y);
@@ -203,5 +212,5 @@ const Art = (() => {
     phase = Math.floor(now / 500);
   }
 
-  return { size, mapColors, ready, animate, tile, edge, object, signpost, actor, icon, preview };
+  return { size, mapColors, ready, animate, tile, edge, object, signpost, actor, corpse, icon, preview };
 })();

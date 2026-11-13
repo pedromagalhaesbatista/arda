@@ -22,6 +22,10 @@
       <div class="world-controls">
         <label for="world-select">World</label>
         <select id="world-select"></select>
+        <select id="mouse-mode" aria-label="Mouse controls">
+          <option value="context">Context controls</option>
+          <option value="classic">Classic controls</option>
+        </select>
         <div class="modes" role="group" aria-label="Game mode">
           <button id="play" aria-pressed="true">Play</button>
           <button id="edit" aria-pressed="false">World Editor</button>
@@ -39,16 +43,18 @@
           <div id="tile-menu" class="tile-menu" hidden aria-label="Tile actions"></div>
           <canvas id="world" tabindex="0" aria-label="World map. Use arrow keys or WASD to move." aria-describedby="controls"></canvas>
         </div>
+        <div id="action-bar" class="action-bar" role="group" aria-label="Action bar"></div>
         <div class="controls" id="controls">
-          <span><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> Move</span>
-          <span><kbd>E</kbd> Interact</span>
-          <span><kbd>1</kbd> Attack</span>
-          <span><kbd>2</kbd> Heal</span>
-          <span>Click to walk · Right-click for actions</span>
+          <span><kbd>WASD</kbd> Move</span>
+          <span><kbd>E</kbd> Use</span>
+          <span id="mouse-hint"></span>
         </div>
-        <section class="journal" aria-label="Game log">
+        <section class="journal" aria-label="Game console">
           <div class="journal-heading">
-            <h3>Journal</h3>
+            <div id="console-tabs" class="console-tabs" role="group" aria-label="Console channels">
+              <button data-channel="all" aria-pressed="true">Journal</button>
+              <button data-channel="combat" aria-pressed="false">Combat</button>
+            </div>
             <div id="game-saving" class="game-saving">
               <span id="game-save-status" role="status"></span>
               <button id="save-game">Save game</button>
@@ -112,9 +118,17 @@
               </div>
             </div>
           </section>
-          <section class="panel battle">
-            <div class="panel-heading"><h3>Battle</h3></div>
+          <section id="battle-panel" class="panel battle">
+            <div class="panel-heading"><h3>Battle</h3><span id="battle-count"></span></div>
             <div id="battle-list"></div>
+          </section>
+          <section id="loot-panel" class="panel pack" hidden>
+            <div class="panel-heading">
+              <h3 id="loot-title">Loot</h3>
+              <button id="close-loot" aria-label="Close loot">×</button>
+            </div>
+            <div class="slots" id="loot-slots"></div>
+            <button id="take-all" class="take-all">Take all</button>
           </section>
           <section id="backpack-panel" class="panel pack">
             <div class="panel-heading"><h3>Backpack</h3><span id="coins">0 coin</span></div>

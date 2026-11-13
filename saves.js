@@ -52,8 +52,10 @@ const Saves = (() => {
       const saved = creatures[actorKey(entity)];
       if (!position(map, saved) || saved.z !== entity.z || !integer(saved.hp, 0, entity.maxHp) || !integer(saved.face, 0, 3)) return false;
     }
-    return Array.isArray(loot) && loot.every(pile => position(map, pile) && integer(pile.coins, 1) &&
-      Array.isArray(pile.items) && pile.items.every(id => id !== "pack" && Object.hasOwn(Equipment.items, id)));
+    return Array.isArray(loot) && loot.every(pile => position(map, pile) && integer(pile.coins, 0) &&
+      (pile.kind === undefined || ["rat", "wolf"].includes(pile.kind)) &&
+      Array.isArray(pile.items) && (pile.coins > 0 || pile.items.length > 0) &&
+      pile.items.every(id => id !== "pack" && id !== "coin" && Object.hasOwn(Equipment.items, id)));
   }
 
   function relocate(value, map, entities) {

@@ -48,6 +48,18 @@
   let player;
   let entities = [];
   let loot = [];
+  let openLoot = null;
+  let nextHeal = 0;
+  let consoleChannel = "all";
+  let mouseMode = "context";
+  let actions = ["attack", "herb", "use", "stop", null, null, null, null];
+  try {
+    if (localStorage.getItem("arda.mouse.v1") === "classic") mouseMode = "classic";
+    const savedActions = JSON.parse(localStorage.getItem("arda.actions.v1"));
+    if (Array.isArray(savedActions) && savedActions.length === actions.length && savedActions.every(validAction)) actions = savedActions;
+  } catch {
+    // Browser settings are optional.
+  }
   let combatText = [];
   let inventoryDirty = true;
   let draggedItem = null;
@@ -78,10 +90,12 @@
   const distance = (a, b) => Math.max(Math.abs(a.x - b.x), Math.abs(a.y - b.y));
   const here = (x, y, z = player.z) => entities.find(entity => entity.hp > 0 && entity.z === z && entity.x === x && entity.y === y);
 
-  function journal(message) {
+  function journal(message, channel = "all") {
     const list = $("journal");
     const entry = document.createElement("li");
     entry.textContent = message;
+    entry.dataset.channel = channel;
+    entry.hidden = consoleChannel === "combat" && channel !== "combat";
     list.append(entry);
     if (list.childElementCount > 60) list.firstElementChild.remove();
     list.scrollTop = list.scrollHeight;
@@ -108,6 +122,8 @@
       }
     }
     loot = [];
+    closeLoot();
+    nextHeal = 0;
     target = null;
     path = [];
     pendingInteraction = null;
@@ -412,18 +428,27 @@
     if (inventoryDirty) updateInventory();
 
     const list = $("battle-list");
+    const focused = document.activeElement.dataset.actor;
     list.replaceChildren();
-    const nearby = entities.filter(entity => creatureNames[entity.type] && entity.hp > 0 && entity.z === player.z && distance(entity, player) <= 7);
+    const nearby = battleTargets();
+    $("battle-count").textContent = nearby.length ? nearby.length : "";
     for (const entity of nearby) {
       const button = document.createElement("button");
+      button.dataset.actor = Saves.actorKey(entity);
       button.setAttribute("aria-pressed", String(entity === target));
       const name = document.createElement("span");
       const hp = document.createElement("span");
       name.textContent = creatureNames[entity.type];
       hp.textContent = `${entity.hp}/${entity.maxHp}`;
-      button.append(name, hp);
+      const health = document.createElement("progress");
+      health.className = "battle-health";
+      health.max = entity.maxHp;
+      health.value = entity.hp;
+      health.setAttribute("aria-hidden", "true");
+      button.append(thumbnail(context => Art.preview(context, entity.type, "markers"), 27), name, hp, health);
       button.addEventListener("click", () => selectTarget(entity));
       list.append(button);
+      if (button.dataset.actor === focused) button.focus({ preventScroll: true });
     }
     if (!nearby.length) {
       const message = document.createElement("p");
@@ -468,47 +493,54 @@
       const badge = document.createElement("small");
       badge.textContent = count;
       button.append(badge);
-      button.setAttribute("aria-label", `${description} × ${count}`);
     }
-    button.addEventListener("contextmenu", event => {
-      event.preventDefault();
-      journal(description);
-    });
-
+    let use = () => journal(description);
+    let label = description;
     if (id === "pack") {
-      button.setAttribute("aria-label", "Toggle backpack");
+      label = "Toggle backpack";
       button.setAttribute("aria-controls", "backpack-panel");
       button.setAttribute("aria-expanded", String(!$("backpack-panel").hidden));
-      button.addEventListener("click", toggleBackpack);
+      use = toggleBackpack;
+    } else if (origin === "loot") {
+      label = `Take ${Equipment.items[id].name}`;
+      use = () => takeLoot(id);
     } else if (id === "herb") {
-      button.setAttribute("aria-label", "Use healing herb");
-      button.addEventListener("click", heal);
+      label = "Use healing herb";
+      use = heal;
     } else if (Equipment.items[id].slot) {
-      button.setAttribute("aria-label", `${origin === "bag" ? "Equip" : "Unequip"} ${Equipment.items[id].name}`);
-      button.addEventListener("click", () => origin === "bag" ? equipItem(id) : stowItem(slot));
+      label = `${origin === "bag" ? "Equip" : "Unequip"} ${Equipment.items[id].name}`;
+      use = () => origin === "bag" ? equipItem(id) : stowItem(slot);
+    }
+    button.setAttribute("aria-label", label);
+    button.addEventListener("click", event => event.shiftKey ? journal(description) : use());
+    button.addEventListener("contextmenu", event => {
+      event.preventDefault();
+      if (mouseMode === "classic" && !event.ctrlKey && !event.metaKey && !event.shiftKey) use();
+      else showMenu(event, [["Look", () => journal(description)], ...(label === description ? [] : [[label, use]])]);
+    });
+
+    if (id !== "pack" && (origin === "loot" || Equipment.items[id].slot || id === "herb")) {
       button.draggable = true;
       button.addEventListener("dragstart", event => {
-        draggedItem = { id, origin, slot };
+        draggedItem = { id, origin, slot, pile: origin === "loot" ? openLoot : null };
         event.dataTransfer.setData("text/plain", id);
-        event.dataTransfer.effectAllowed = "move";
+        event.dataTransfer.effectAllowed = origin === "loot" ? "move" : "copyMove";
       });
       button.addEventListener("dragend", clearInventoryDrag);
-    } else {
-      button.addEventListener("click", () => journal(description));
     }
     return button;
   }
 
   function clearInventoryDrag() {
     draggedItem = null;
-    document.querySelector(".drop-ready")?.classList.remove("drop-ready");
+    for (const element of document.querySelectorAll(".drop-ready")) element.classList.remove("drop-ready");
   }
 
   function inventoryDrop(event, target) {
     if (!draggedItem) return;
-    const { id, origin, slot } = draggedItem;
+    const { id, origin, slot, pile } = draggedItem;
     const destination = target.dataset.slot;
-    if (destination ? origin !== "bag" || Equipment.items[id].slot !== destination : origin !== "worn") return;
+    if (destination ? origin !== "bag" || Equipment.items[id].slot !== destination : !["worn", "loot"].includes(origin)) return;
     event.preventDefault();
     if (event.type === "dragover") {
       event.dataTransfer.dropEffect = "move";
@@ -517,7 +549,8 @@
     }
     clearInventoryDrag();
     if (destination) equipItem(id);
-    else stowItem(slot);
+    else if (origin === "worn") stowItem(slot);
+    else if (pile === openLoot) takeLoot(id);
   }
 
   function updateInventory() {
@@ -558,7 +591,8 @@
       empty.setAttribute("aria-hidden", "true");
       backpack.append(empty);
     }
-    if (focused) document.querySelector(`[data-item="${focused}"]`)?.focus({ preventScroll: true });
+    if (focused) document.querySelector(`#equipment-slots [data-item="${focused}"], #slots [data-item="${focused}"]`)?.focus({ preventScroll: true });
+    updateActions();
     inventoryDirty = false;
   }
 
@@ -645,7 +679,10 @@
 
     if (!edit) {
       for (const pile of loot) {
-        if (pile.z === player.z) Art.icon(c, "coin", px(pile.x), py(pile.y));
+        if (pile.z === player.z) {
+          if (pile.kind) Art.corpse(c, pile.kind, px(pile.x), py(pile.y));
+          else Art.icon(c, "coin", px(pile.x), py(pile.y));
+        }
       }
       const active = [...entities.filter(entity => entity.z === player.z && entity.hp > 0), player];
       for (const entity of active) {
@@ -757,6 +794,7 @@
     if (!World.canStep(map, currentFloor(), player.x, player.y, x, y, (nx, ny) => Boolean(here(nx, ny)))) return false;
     const interval = OpenTibia.WALK_DURATION_MS * (dx && dy ? 1.5 : 1);
     moveActor(player, x, y, now, interval - 15);
+    if (openLoot && distance(player, openLoot) > 1) closeLoot();
     nextMove = now + interval;
     needsRefresh = true;
     return true;
@@ -843,6 +881,7 @@
         journal("The passage is blocked.");
         return true;
       }
+      closeLoot();
       Object.assign(player, { x: marker.x, y: marker.y, z: marker.z, motion: null });
       path = [];
       target = null;
@@ -850,15 +889,9 @@
       needsRefresh = true;
       return true;
     }
-    const pile = loot.find(item => item.x === x && item.y === y && item.z === player.z);
+    const pile = lootAt(x, y);
     if (pile) {
-      Equipment.add(player.kit, "coin", pile.coins);
-      for (const id of pile.items) Equipment.add(player.kit, id);
-      loot = loot.filter(item => item !== pile);
-      const coins = `${pile.coins} ${pile.coins === 1 ? "coin" : "coins"}`;
-      const extra = pile.items.length ? ` and ${pile.items.map(id => Equipment.items[id].name).join(", ")}` : "";
-      journal(`Picked up ${coins}${extra}.`);
-      inventoryChanged();
+      openContainer(pile);
       return true;
     }
     if (marker?.type === "keeper") {
@@ -894,22 +927,89 @@
     journal("Move beside a person, passage, or item to interact.");
   }
 
-  function clickWorld(pos) {
-    const floor = currentFloor();
-    const entity = here(pos.x, pos.y);
-    const marker = floor.markers[World.key(pos.x, pos.y)];
-    if (entity && creatureNames[entity.type]) {
-      selectTarget(entity);
-      return;
+  function lootAt(x, y) {
+    return loot.find(pile => pile.z === player.z && pile.x === x && pile.y === y);
+  }
+
+  function closeLoot() {
+    openLoot = null;
+    $("loot-panel").hidden = true;
+  }
+
+  function openContainer(pile) {
+    openLoot = pile;
+    const name = creatureNames[pile.kind];
+    $("loot-title").textContent = name ? `${name} corpse` : "Loot";
+    const slots = $("loot-slots");
+    slots.replaceChildren();
+    if (pile.coins) slots.append(makeItemButton("coin", "loot", null, pile.coins));
+    const counts = new Map();
+    for (const item of pile.items) counts.set(item, (counts.get(item) ?? 0) + 1);
+    for (const [item, count] of counts) slots.append(makeItemButton(item, "loot", null, count));
+    $("loot-panel").hidden = false;
+  }
+
+  function takeLoot(id = null) {
+    const pile = openLoot;
+    if (!pile || pile.z !== player.z || distance(player, pile) > 1) return;
+    if (id === "coin" || id === null) {
+      if (pile.coins) Equipment.add(player.kit, "coin", pile.coins);
+      pile.coins = 0;
     }
-    if (marker?.type === "link") {
+    if (id === null) {
+      for (const item of pile.items) Equipment.add(player.kit, item);
+      pile.items = [];
+    } else if (id !== "coin") {
+      const index = pile.items.indexOf(id);
+      if (index === -1) return;
+      Equipment.add(player.kit, id);
+      pile.items.splice(index, 1);
+    }
+    journal(id ? `You take ${Equipment.items[id].name.toLowerCase()}.` : "You take the remaining loot.");
+    if (!pile.coins && !pile.items.length) {
+      loot = loot.filter(item => item !== pile);
+      closeLoot();
+    } else openContainer(pile);
+    inventoryChanged();
+  }
+
+  function tileInfo(pos) {
+    const floor = currentFloor();
+    const key = World.key(pos.x, pos.y);
+    const entity = here(pos.x, pos.y);
+    const marker = floor.markers[key];
+    const object = floor.objects[key];
+    const pile = lootAt(pos.x, pos.y);
+    const markerName = marker?.type === "ledger" && hasLedger ? null : World.markers[marker?.type];
+    const name = (entity && (creatureNames[entity.type] || World.markers[entity.type])) ||
+      (pile && (creatureNames[pile.kind] ? `${creatureNames[pile.kind]} corpse` : "Loot")) ||
+      (marker?.type === "link" && object ? World.objects[object] : markerName) ||
+      World.objects[object] || World.ground[floor.ground[World.index(map, pos.x, pos.y)]];
+    const action = marker?.type === "link" || object === "sign" ? "Use" : pile ? "Open" :
+      markerName ? markerActions[marker?.type] : null;
+    return { floor, entity, marker, name, action };
+  }
+
+  function useTile(pos, info) {
+    if (info.entity && creatureNames[info.entity.type]) {
+      selectTarget(info.entity);
+    } else if (info.marker?.type === "link") {
       if (distance(player, pos) === 0) useAt(pos.x, pos.y);
       else walkTo(pos);
-      return;
-    }
-    if ((markerActions[marker?.type] && !(marker.type === "ledger" && hasLedger)) || loot.some(pile => pile.z === player.z && pile.x === pos.x && pile.y === pos.y) || floor.objects[World.key(pos.x, pos.y)] === "sign") {
+    } else if (info.action) {
       walkTo(pos, true, () => useAt(pos.x, pos.y));
-      return;
+    }
+  }
+
+  function clickWorld(event) {
+    const pos = pointerPos(event);
+    if (!World.inside(map, pos.x, pos.y)) return;
+    const info = tileInfo(pos);
+    if (event.shiftKey) return journal(`You see: ${info.name}.`);
+    if (mouseMode === "context" || event.ctrlKey || event.metaKey) {
+      if (info.action || (info.entity && creatureNames[info.entity.type])) return useTile(pos, info);
+    } else if (info.marker?.type === "link" && distance(player, pos) === 0) {
+      return useTile(pos, info);
     }
     walkTo(pos);
   }
@@ -920,31 +1020,9 @@
     tileMenu.hidden = true;
   }
 
-  function showTileMenu(event) {
-    event.preventDefault();
-    if (edit) return;
-    const pos = pointerPos(event);
-    if (!World.inside(map, pos.x, pos.y)) return;
-    const floor = currentFloor();
-    const key = World.key(pos.x, pos.y);
-    const entity = here(pos.x, pos.y);
-    const marker = floor.markers[key];
-    const object = floor.objects[key];
-    const pile = loot.find(item => item.x === pos.x && item.y === pos.y && item.z === player.z);
-    const markerName = marker?.type === "ledger" && hasLedger ? null : World.markers[marker?.type];
-    const name = (entity && creatureNames[entity.type]) || (pile && "Loot") || markerName ||
-      World.objects[object] || World.ground[floor.ground[World.index(map, pos.x, pos.y)]];
-    const actions = [["Look", () => journal(`You see: ${name}.`)]];
-    if (World.passable(map, floor, pos.x, pos.y) && !entity) actions.push(["Walk here", () => walkTo(pos)]);
-    if (entity && creatureNames[entity.type]) {
-      actions.push([target === entity ? "Stop attack" : "Attack", () => selectTarget(entity)]);
-    } else {
-      const action = pile ? "Take" : marker?.type === "link" || object === "sign" ? "Use" :
-        markerName ? markerActions[marker?.type] : null;
-      if (action) actions.push([action, () => walkTo(pos, true, () => useAt(pos.x, pos.y))]);
-    }
+  function showMenu(event, choices) {
     tileMenu.replaceChildren();
-    for (const [label, action] of actions) {
+    for (const [label, action] of choices) {
       const item = document.createElement("button");
       item.textContent = label;
       item.addEventListener("click", () => {
@@ -954,11 +1032,32 @@
       });
       tileMenu.append(item);
     }
-    const box = tileMenu.parentElement.getBoundingClientRect();
     tileMenu.hidden = false;
-    tileMenu.style.left = `${Math.max(0, Math.min(event.clientX - box.left, box.width - tileMenu.offsetWidth))}px`;
-    tileMenu.style.top = `${Math.max(0, Math.min(event.clientY - box.top, box.height - tileMenu.offsetHeight))}px`;
+    tileMenu.style.left = `${Math.max(0, Math.min(event.clientX, innerWidth - tileMenu.offsetWidth))}px`;
+    tileMenu.style.top = `${Math.max(0, Math.min(event.clientY, innerHeight - tileMenu.offsetHeight))}px`;
     tileMenu.firstElementChild.focus({ preventScroll: true });
+  }
+
+  function showTileMenu(event) {
+    event.preventDefault();
+    if (edit) return;
+    const pos = pointerPos(event);
+    if (!World.inside(map, pos.x, pos.y)) return;
+    const info = tileInfo(pos);
+    const look = () => journal(`You see: ${info.name}.`);
+    if (event.shiftKey) return look();
+    if (mouseMode === "classic" && !event.ctrlKey && !event.metaKey) return useTile(pos, info);
+    const choices = [["Look", look]];
+    if (World.passable(map, info.floor, pos.x, pos.y) && !info.entity) choices.push(["Walk here", () => walkTo(pos)]);
+    if (info.entity && creatureNames[info.entity.type]) {
+      choices.push([target === info.entity ? "Stop attack" : "Attack", () => selectTarget(info.entity)]);
+    } else if (info.action) choices.push([info.action, () => useTile(pos, info)]);
+    showMenu(event, choices);
+  }
+
+  function battleTargets() {
+    return entities.filter(entity => creatureNames[entity.type] && entity.hp > 0 && entity.z === player.z && distance(entity, player) <= 7)
+      .sort((a, b) => distance(player, a) - distance(player, b));
   }
 
   function selectTarget(entity) {
@@ -970,12 +1069,89 @@
   }
 
   function attackKey() {
-    if (target) return;
-    const nearby = entities
-      .filter(entity => creatureNames[entity.type] && entity.hp > 0 && entity.z === player.z && distance(entity, player) <= 7)
-      .sort((a, b) => distance(player, a) - distance(player, b));
-    if (nearby[0]) selectTarget(nearby[0]);
-    else journal("There is nothing nearby to attack.");
+    const enemy = battleTargets()[0];
+    if (!target && enemy) selectTarget(enemy);
+    else if (!target) journal("There is nothing nearby to attack.");
+  }
+
+  function stopActions() {
+    closeTileMenu();
+    target = null;
+    path = [];
+    pendingInteraction = null;
+    held.clear();
+    needsRefresh = true;
+  }
+
+  function validAction(id) {
+    return id === null || ["attack", "use", "stop"].includes(id) ||
+      (Object.hasOwn(Equipment.items, id) && id !== "pack" && id !== "coin");
+  }
+
+  function setAction(index, id) {
+    if (!validAction(id)) return;
+    actions[index] = id;
+    try { localStorage.setItem("arda.actions.v1", JSON.stringify(actions)); } catch {
+      // Hotkeys can still be used in this tab.
+    }
+    updateActions();
+  }
+
+  function runAction(id) {
+    if (id === "attack") attackKey();
+    else if (id === "use") interact();
+    else if (id === "stop") stopActions();
+    else if (id === "herb") heal();
+    else if (id) {
+      const slot = Equipment.items[id].slot;
+      if (player.kit.worn[slot] === id) stowItem(slot);
+      else if (player.kit.bag[id]) equipItem(id);
+      else journal(`You don’t have ${Equipment.items[id].name.toLowerCase()}.`);
+    }
+  }
+
+  function updateActions() {
+    const bar = $("action-bar");
+    const focused = document.activeElement.dataset.actionIndex;
+    bar.replaceChildren();
+    actions.forEach((id, index) => {
+      const button = document.createElement("button");
+      button.type = "button";
+      const hotkey = `F${index + 1}`;
+      const label = ({ attack: "Attack", use: "Use nearby", stop: "Stop", herb: "Use healing herb" })[id] ??
+        (id ? Equipment.items[id].name : "Empty");
+      button.dataset.actionIndex = index;
+      button.title = id ? `${label} (${hotkey})` : `${hotkey} · Drag an item here`;
+      button.setAttribute("aria-label", `${hotkey} ${label}`);
+      const key = document.createElement("kbd");
+      key.textContent = hotkey;
+      button.append(key);
+      if (id && !["use", "stop"].includes(id)) {
+        button.append(thumbnail(context => Art.icon(context, id === "attack" ? "sword" : id)));
+      } else {
+        const icon = document.createElement("span");
+        icon.className = id === "stop" ? "stop-icon" : "empty-action";
+        icon.textContent = id === "stop" ? "■" : id === "use" ? "↵" : "·";
+        icon.setAttribute("aria-hidden", "true");
+        button.append(icon);
+      }
+      if (id === "herb") {
+        const count = document.createElement("small");
+        count.textContent = player.kit.bag.herb ?? 0;
+        button.append(count);
+      }
+      button.addEventListener("click", () => {
+        runAction(id);
+        canvas.focus({ preventScroll: true });
+      });
+      button.addEventListener("contextmenu", event => {
+        event.preventDefault();
+        const presets = [["Attack", "attack"], ["Use healing herb", "herb"], ["Use nearby", "use"], ["Stop", "stop"], ["Clear slot", null]];
+        showMenu(event, presets.map(([name, action]) => [name, () => setAction(index, action)]));
+      });
+      bar.append(button);
+      if (String(index) === focused) button.focus({ preventScroll: true });
+    });
   }
 
   function showCombatText(actor, text, color, now) {
@@ -998,7 +1174,7 @@
     const name = creatureNames[target.type];
     target.hp -= damage;
     showCombatText(target, damage || "Miss", damage ? "#ff8e70" : "#f3d9a7", now);
-    journal(damage ? `You hit the ${name.toLowerCase()} for ${damage}.` : `You miss the ${name.toLowerCase()}.`);
+    journal(damage ? `You hit the ${name.toLowerCase()} for ${damage}.` : `You miss the ${name.toLowerCase()}.`, "combat");
     if (target.hp === 0) {
       if (target.type === "rat") ratsDefeated++;
       const xp = target.type === "rat" ? 9 : 14;
@@ -1007,10 +1183,11 @@
       if (pile) {
         pile.coins += target.type === "rat" ? 1 : 3;
         if (item) pile.items.push(item);
+        if (pile === openLoot) openContainer(pile);
       } else {
-        loot.push({ x: target.x, y: target.y, z: target.z, coins: target.type === "rat" ? 1 : 3, items: item ? [item] : [] });
+        loot.push({ x: target.x, y: target.y, z: target.z, kind: target.type, coins: target.type === "rat" ? 1 : 3, items: item ? [item] : [] });
       }
-      journal(`${name} defeated. You gain ${xp} experience.`);
+      journal(`${name} defeated. You gain ${xp} experience.`, "combat");
       player.xp += xp;
       if (player.xp >= player.level * 18) {
         player.xp -= player.level * 18;
@@ -1025,13 +1202,16 @@
   }
 
   function heal() {
+    const now = performance.now();
+    if (now < nextHeal) return;
     if (player.hp === player.maxHp) return journal("You are already at full health.");
     if (!player.kit.bag.herb) return journal("Your backpack is out of healing herbs.");
     const restored = Math.min(Equipment.items.herb.healing, player.maxHp - player.hp);
     player.hp += restored;
+    nextHeal = now + 1000;
     Equipment.add(player.kit, "herb", -1);
-    showCombatText(player, `+${restored}`, "#a9da83", performance.now());
-    journal(`You use a healing herb and recover ${restored} health.`);
+    showCombatText(player, `+${restored}`, "#a9da83", now);
+    journal(`You use a healing herb and recover ${restored} health.`, "combat");
     inventoryChanged();
   }
 
@@ -1052,12 +1232,13 @@
           journal(`You advanced to shielding level ${player.shielding.level}.`);
         }
         showCombatText(player, damage || "Block", damage ? "#ff887b" : "#e3d0a1", now);
-        if (damage) journal(`The ${name} hits you for ${damage}.`);
-        else if (result.blocked) journal(`You block the ${name}'s attack.`);
-        else journal(`Your armor absorbs the ${name}'s attack.`);
+        if (damage) journal(`The ${name} hits you for ${damage}.`, "combat");
+        else if (result.blocked) journal(`You block the ${name}'s attack.`, "combat");
+        else journal(`Your armor absorbs the ${name}'s attack.`, "combat");
         needsRefresh = true;
         if (player.hp === 0) {
           const start = World.findStart(map);
+          closeLoot();
           Object.assign(player, { ...start, hp: player.maxHp, motion: null });
           path = [];
           pendingInteraction = null;
@@ -1275,6 +1456,7 @@
     if (edit === enable) return;
     finishPaint();
     closeTileMenu();
+    closeLoot();
     held.clear();
     if (enable) {
       saveProgress();
@@ -1303,6 +1485,8 @@
     $("play-panel").hidden = edit;
     $("edit-panel").hidden = !edit;
     $("controls").hidden = edit;
+    $("action-bar").hidden = edit;
+    $("mouse-mode").disabled = edit;
     canvas.setAttribute("aria-label", edit ? "World editor. Click to paint. Use WASD or arrow keys to pan." : "World map. Use arrow keys or WASD to move.");
     canvas.focus({ preventScroll: true });
     needsRefresh = true;
@@ -1435,11 +1619,11 @@
   canvas.addEventListener("pointerdown", event => {
     if (event.button !== 0 || gesture) return;
     canvas.focus({ preventScroll: true });
-    const pos = pointerPos(event);
     if (!edit) {
-      clickWorld(pos);
+      clickWorld(event);
       return;
     }
+    const pos = pointerPos(event);
     canvas.setPointerCapture(event.pointerId);
     gesture = { pointerId: event.pointerId, before: snapshot(), changed: false, last: pos };
     paint(pos);
@@ -1459,12 +1643,20 @@
   }
 
   minimap.addEventListener("click", event => {
-    if (!edit) return;
     const { scale, ox, oy } = drawMinimap();
     const box = minimap.getBoundingClientRect();
-    const x = Math.floor(((event.clientX - box.left) * minimap.width / box.width - ox) / scale);
-    const y = Math.floor(((event.clientY - box.top) * minimap.height / box.height - oy) / scale);
-    if (World.inside(map, x, y)) placeEditor(x, y);
+    const left = box.left + minimap.clientLeft;
+    const top = box.top + minimap.clientTop;
+    const x = Math.floor(((event.clientX - left) * minimap.width / minimap.clientWidth - ox) / scale);
+    const y = Math.floor(((event.clientY - top) * minimap.height / minimap.clientHeight - oy) / scale);
+    if (!World.inside(map, x, y)) return;
+    if (edit) placeEditor(x, y);
+    else {
+      stopActions();
+      walkTo({ x, y });
+      if (!path.length && (player.x !== x || player.y !== y)) journal("There is no clear path to that spot.");
+    }
+    canvas.focus({ preventScroll: true });
   });
 
   for (const [id, key] of [["stances", "stance"], ["pursuit", "pursuit"]]) {
@@ -1491,6 +1683,57 @@
     });
   }
 
+  const actionBar = $("action-bar");
+  for (const type of ["dragover", "drop"]) {
+    actionBar.addEventListener(type, event => {
+      const button = event.target.closest("[data-action-index]");
+      if (!button || !draggedItem || draggedItem.origin === "loot" || !validAction(draggedItem.id)) return;
+      event.preventDefault();
+      if (type === "dragover") {
+        event.dataTransfer.dropEffect = "copy";
+        button.classList.add("drop-ready");
+      } else {
+        const id = draggedItem.id;
+        clearInventoryDrag();
+        setAction(Number(button.dataset.actionIndex), id);
+      }
+    });
+  }
+  actionBar.addEventListener("dragleave", event => {
+    const button = event.target.closest("[data-action-index]");
+    if (button && !button.contains(event.relatedTarget)) button.classList.remove("drop-ready");
+  });
+  $("close-loot").addEventListener("click", closeLoot);
+  $("take-all").addEventListener("click", () => takeLoot());
+
+  function updateMouseHint() {
+    $("mouse-mode").value = mouseMode;
+    $("mouse-hint").textContent = mouseMode === "classic"
+      ? "Right-click to use or attack · Ctrl + right-click for menu · Shift-click to look"
+      : "Click to walk or interact · Right-click for menu · Shift-click to look";
+  }
+
+  $("mouse-mode").addEventListener("change", event => {
+    mouseMode = event.target.value;
+    try { localStorage.setItem("arda.mouse.v1", mouseMode); } catch {
+      // Controls can still be changed for this tab.
+    }
+    updateMouseHint();
+    canvas.focus({ preventScroll: true });
+  });
+
+  $("console-tabs").addEventListener("click", event => {
+    const channel = event.target.dataset.channel;
+    if (!channel) return;
+    consoleChannel = channel;
+    for (const button of $("console-tabs").children) {
+      button.setAttribute("aria-pressed", String(button.dataset.channel === channel));
+    }
+    const list = $("journal");
+    for (const entry of list.children) entry.hidden = channel === "combat" && entry.dataset.channel !== "combat";
+    list.scrollTop = list.scrollHeight;
+  });
+
   window.addEventListener("keydown", event => {
     if (event.target.matches("input, select, textarea") || event.altKey) return;
     const key = event.key.toLowerCase();
@@ -1500,7 +1743,13 @@
       else restore(undo, redo);
       return;
     }
-    if (event.metaKey || event.ctrlKey) return;
+    if (event.metaKey || event.ctrlKey) {
+      if (!edit && key === "b") {
+        event.preventDefault();
+        $("battle-panel").hidden = !$("battle-panel").hidden;
+      }
+      return;
+    }
     const direction = numpad[event.code] ?? movement[key];
     if (direction) {
       event.preventDefault();
@@ -1508,17 +1757,18 @@
       else held.set(event.code, direction);
       return;
     }
-    if (edit || event.repeat) return;
+    if (edit) return;
+    const hotkey = /^f([1-8])$/.exec(key);
+    if (hotkey) {
+      event.preventDefault();
+      if (!event.repeat) runAction(actions[Number(hotkey[1]) - 1]);
+      return;
+    }
+    if (event.repeat) return;
     if (key === "e") interact();
     if (key === "1") attackKey();
     if (key === "2") heal();
-    if (key === "escape") {
-      closeTileMenu();
-      target = null;
-      path = [];
-      pendingInteraction = null;
-      needsRefresh = true;
-    }
+    if (key === "escape") stopActions();
   });
   window.addEventListener("keyup", event => held.delete(event.code));
   window.addEventListener("blur", () => held.clear());
@@ -1537,6 +1787,7 @@
   }
 
   syncWorldSelect();
+  updateMouseHint();
   const initial = resumePlay();
   resize();
   if (loadMessage) journal(loadMessage);

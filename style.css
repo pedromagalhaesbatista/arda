@@ -107,8 +107,8 @@ h3 { font-size: 12px; font-weight: 700; letter-spacing: .085em; text-transform: 
 }
 
 .tile-menu {
-  position: absolute;
-  z-index: 1;
+  position: fixed;
+  z-index: 10;
   min-width: 110px;
   padding: 3px;
   background: #272822;
@@ -200,7 +200,105 @@ h3 { font-size: 12px; font-weight: 700; letter-spacing: .085em; text-transform: 
 @media (max-width: 550px) {
   .topbar { height: auto; min-height: 60px; flex-wrap: wrap; padding: 6px 0; }
   .world-controls { flex-wrap: wrap; gap: 5px; }
-  .world-controls label { position: absolute; width: 1px; height: 1px; clip-path: inset(50%); }
+  .world-controls label { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
   .world-controls select { max-width: 120px; font-size: 12px; }
   .modes button { min-width: auto; font-size: 12px; }
+}
+
+/* The play area, action bar, and console share the same compact frame. */
+:root {
+  --panel: #292b28;
+  --well: #1b1e1b;
+  --line: #484b42;
+  --muted: #b6b7a7;
+}
+.client { max-width: 1680px; padding: 0 10px 14px; }
+.topbar { height: 45px; margin-bottom: 7px; gap: 8px; }
+.brand { gap: 7px; }
+.brand-mark { width: 24px; height: 24px; font-size: 15px; }
+h1 { font-size: 25px; }
+.modes { gap: 2px; padding: 2px; }
+.modes button, .world-controls select { padding: 4px 8px; min-width: auto; font-size: 12px; }
+.layout { gap: 6px; }
+.game-panel, .panel { min-width: 0; border-radius: 2px; }
+.game-heading, .panel-heading {
+  min-height: 29px;
+  padding: 0 7px;
+  background: linear-gradient(#3a3d36, #2d302a);
+  box-shadow: inset 0 1px #55574e;
+}
+.game-heading h2 { font: 700 13px system-ui, sans-serif; }
+.viewport { height: clamp(340px, calc(100dvh - 269px), 950px); }
+.controls { min-height: 27px; padding: 3px 7px; gap: 3px 9px; font-size: 11px; }
+kbd { font-size: 10px; padding: 0 3px; }
+.sidebar, #play-panel { gap: 5px; }
+.sidebar { min-width: 0; }
+#minimap { width: calc(100% - 12px); margin: 6px; cursor: crosshair; }
+.landmarks summary { padding: 5px 7px; }
+.vitals { padding: 5px 7px 4px; }
+.vital-label + .meter { margin: 2px 0 5px; }
+.skills { padding: 1px 7px 5px; }
+.equipment-slots { padding: 5px 7px 3px; max-width: 178px; gap: 3px; }
+.equipment-slot { height: 36px; grid-template-rows: 25px auto; }
+.equipment-slot canvas { width: 25px; height: 25px; }
+.equipment-slot span { font-size: 9px; }
+.gear-stats { padding: 3px 3px 4px; }
+.fight-controls { padding: 4px; gap: 4px; }
+.fight-controls button { padding: 4px 1px; }
+.slots { gap: 3px; padding: 5px; }
+.slot:not(.equipment-slot) { height: 34px; }
+.slot:not(.equipment-slot) canvas { width: 30px; height: 30px; }
+#battle-list { gap: 2px; padding: 4px; max-height: 155px; overflow: auto; }
+#battle-list p { margin: 5px; }
+#battle-list button {
+  display: grid;
+  grid-template-columns: 29px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 5px;
+  border-radius: 1px;
+  padding: 2px 4px;
+}
+#battle-list canvas { grid-row: span 2; image-rendering: pixelated; }
+#battle-list button[aria-pressed="true"] { border-color: #c96b56; color: #ffe1cc; background: #4b302a; }
+.battle-health { grid-column: 2 / -1; height: 3px; width: 100%; accent-color: #9fa86d; }
+#close-loot { padding: 1px 6px; }
+.take-all { margin: 0 5px 5px; padding: 3px 6px; font-size: 11px; }
+.action-bar { display: flex; gap: 3px; padding: 4px 6px; overflow-x: auto; border-block: 1px solid #151815; }
+.action-bar button {
+  position: relative;
+  flex: 0 0 42px;
+  height: 38px;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  border-radius: 1px;
+  background: #22241f;
+  box-shadow: inset 0 1px #4e5148, inset 0 -1px #181a17;
+}
+.action-bar canvas { width: 25px; height: 25px; image-rendering: pixelated; }
+.action-bar kbd { position: absolute; left: 1px; top: 1px; margin: 0; border: 0; background: #181a17c7; font-size: 9px; }
+.action-bar small { position: absolute; right: 2px; bottom: 1px; font-size: 9px; color: #ddd5af; }
+.action-bar .stop-icon { color: #d69981; font-size: 16px; }
+.action-bar .empty-action { color: #747a6e; font-size: 13px; }
+.action-bar button.drop-ready { outline: 1px solid var(--gold); outline-offset: -2px; }
+.journal { padding: 0 5px 5px; }
+.journal-heading { padding: 4px 0 2px; min-height: 29px; border-bottom: 1px solid var(--line); }
+.console-tabs { display: flex; gap: 3px; }
+.console-tabs button, .game-saving button { padding: 3px 6px; font-size: 11px; }
+#journal { padding: 4px; height: 75px; margin-top: 3px; background: #1c1e1b; font-size: 12px; line-height: 1.5; }
+#journal li[data-channel="combat"] { color: #dda994; }
+#quest-status { margin: 5px 4px; }
+@media (min-width: 761px) {
+  .layout { grid-template-columns: minmax(0, 1fr) 230px; }
+  .sidebar { max-height: calc(100dvh - 64px); overflow: auto; align-content: start; }
+}
+@media (max-width: 760px) {
+  .layout { grid-template-columns: minmax(0, 1fr); }
+  .viewport { height: clamp(300px, 54dvh, 530px); }
+  .sidebar { grid-template-columns: minmax(0, 1fr); }
+}
+@media (max-width: 550px) {
+  .topbar { height: auto; min-height: 45px; }
+  .world-controls { flex: 1; justify-content: flex-end; }
+  .world-controls select { max-width: 115px; }
 }

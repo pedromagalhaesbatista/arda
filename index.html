@@ -200,6 +200,7 @@
               <button id="map-center" class="map-icon" title="Show current floor and reset zoom" aria-label="Reset minimap"></button>
             </div>
           </div>
+          <button id="shire-atlas-open" type="button" hidden>Open regional map</button>
           <details id="landmarks" class="landmarks" hidden>
             <summary>Shire landmarks</summary>
             <div id="landmark-list"></div>
@@ -277,6 +278,17 @@
       </aside>
     </div>
   </main>
+  <dialog id="shire-atlas" aria-labelledby="shire-atlas-title">
+    <div class="atlas-header">
+      <h2 id="shire-atlas-title">The Shire and Its Neighbours</h2>
+      <button id="shire-atlas-close" type="button" aria-label="Close regional map" autofocus>×</button>
+    </div>
+    <canvas id="shire-atlas-canvas" width="1280" height="720" role="img" aria-label="Regional map with rivers, roads and settlements. Use the destination list to walk to a landmark."></canvas>
+    <div class="atlas-footer">
+      <label>Destination <select id="atlas-destination"></select></label>
+      <button id="atlas-walk" type="button">Walk there</button>
+    </div>
+  </dialog>
   <dialog id="character-screen" aria-labelledby="character-screen-title" class="panel">
     <header class="panel-heading">
       <h3 id="character-screen-title"><img src="opentibia/ui/skills.png" alt="">Characters</h3>

@@ -1,8 +1,8 @@
 # Arda
 
-[Play Arda on GitHub Pages](https://pedromagalhaesbatista.github.io/arda/). Arda is a single-player browser RPG with an in-game map editor. Explore Hobbiton and Bywater in The Shire, or visit Bree from the World menu.
+[Play Arda on GitHub Pages](https://pedromagalhaesbatista.github.io/arda/). Arda is a single-player browser RPG with an in-game map editor.
 
-Open **Shire landmarks** in the minimap to find routes from Michel Delving through Bywater to the Brandywine Bridge, north through Overhill to Oatbarton, or south through Tuckborough and Woody End. Cross to Buckland by bridge or use the Bucklebury Ferry landing in the Marish. The Overhill smial, Michel Delving Market Hall, and Stock Ferry House have walkable interiors. The regional geography follows Norlackale of Laurelin’s *The Shire and Its Neighbours, T.A. 3018*, supplied as a map reference.
+Choose **The Shire and Its Neighbours** from the World menu. Use **Open regional map** below the minimap to see the full area and choose a destination. The East Road runs through the Shire to Bree-town. The northern roads reach Evendim, and the western road leads to the settlements along the Lune. Cross the Brandywine by bridge or use the Bucklebury Ferry landing near Stock. The regional geography follows Norlackale of Laurelin’s *The Shire and Its Neighbours, T.A. 3018*, supplied as a map reference.
 
 The site can reopen offline after the first successful online visit and cache setup. Character progress saves in the current browser. Use **Export save** and **Import save** to move it between the local game and the website. For a custom world, export and import its map in the editor first.
 

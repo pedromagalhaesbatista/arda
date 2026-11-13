@@ -1,9 +1,11 @@
 "use strict";
 
 const World = (() => {
+  const maxSize = 320;
   const ground = {
     grass: "Grass", path: "Dirt path", water: "Water", river: "River water", stone: "Flagstone",
-    wood: "Planks", meadow: "Meadow", crop: "Crops", bridge: "Bridge", soil: "Garden soil", void: "Void"
+    wood: "Planks", meadow: "Meadow", crop: "Crops", bridge: "Bridge", soil: "Garden soil", void: "Void",
+    heath: "Heath", marsh: "Marsh",
   };
   const objects = {
     tree: "Oak", pine: "Pine", shrub: "Shrub", flowers: "Flowers",
@@ -96,7 +98,9 @@ const World = (() => {
     const fail = message => { throw new Error(message); };
     if (!data || data.version !== 1) fail("This file is not an Arda world (version 1).");
     const { width, height, floors, name } = data;
-    if (![width, height].every(size => Number.isInteger(size) && size >= 8 && size <= 128)) fail("World size must be between 8 and 128 tiles per side.");
+    if (![width, height].every(size => Number.isInteger(size) && size >= 8 && size <= maxSize)) {
+      fail(`World size must be between 8 and ${maxSize} tiles per side.`);
+    }
     if (typeof name !== "string" || !name.trim() || name.length > 60) fail("The world needs a name of up to 60 characters.");
     if (!Array.isArray(floors) || floors.length < 1 || floors.length > 16) fail("A world needs 1–16 floors.");
 
@@ -235,5 +239,5 @@ const World = (() => {
     return validate(map);
   }
 
-  return { ground, objects, markers, key, index, inside, floorAt, makeFloor, passable, canStep, clearSight, route, findStart, validate, seed };
+  return { maxSize, ground, objects, markers, key, index, inside, floorAt, makeFloor, passable, canStep, clearSight, route, findStart, validate, seed };
 })();

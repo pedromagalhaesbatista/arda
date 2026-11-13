@@ -284,7 +284,7 @@
       for (const prior of compatibleRevisions()) {
         if (data) break;
         const priorKey = Saves.progressKey(selectedWorld, prior, id);
-        data = Saves.read(priorKey, map, hostiles, value => Saves.relocate(Shire.moveOldSave(value), map, entities)).value;
+        data = Saves.read(priorKey, map, hostiles, value => Saves.relocate(Shire.moveOldSave(value, prior), map, entities)).value;
       }
       saveStatus(result.value ? "Saved on this device" : "Autosave on");
       if (!data) return keepPlaytest ? "continued" : "new";
@@ -340,7 +340,7 @@
       if (data?.format !== "arda-save" || data.version !== 1) throw new Error("Choose an Arda character save.");
       const previousShire = compatibleRevisions().includes(data.revision);
       if (data.revision !== playRevision && !previousShire) throw new Error("Open the matching map before importing this save.");
-      const progress = previousShire ? Saves.relocate(Shire.moveOldSave(data.progress), map, entities) : data.progress;
+      const progress = previousShire ? Saves.relocate(Shire.moveOldSave(data.progress, data.revision), map, entities) : data.progress;
       if (!Saves.valid(progress, map, entities.filter(entity => creatureNames[entity.type]))) {
         throw new Error("The character save is unreadable.");
       }
@@ -517,7 +517,8 @@
   function drawMinimap() {
     const floor = World.floorAt(map, previewFloor) ?? currentFloor();
     const pos = edit ? editorCenter : player;
-    const fit = Math.max(1, Math.min(Math.floor(minimap.width / map.width), Math.floor(minimap.height / map.height)));
+    const ratio = Math.min(minimap.width / map.width, minimap.height / map.height);
+    const fit = ratio < 1 ? ratio : Math.floor(ratio);
     const scale = fit * minimapZoom;
     const origin = (size, tiles, tile) => Math.floor(size >= tiles * scale ? (size - tiles * scale) / 2 :
       Math.min(0, Math.max(size - tiles * scale, size / 2 - (tile + .5) * scale)));
@@ -538,7 +539,7 @@
       if (marker.type !== "link" && !(map.adventure === "shire" && floor.z === 0 && marker.type === "notice")) continue;
       const [x, y] = key.split(",").map(Number);
       mini.fillStyle = marker.type === "link" ? "#e6ca80" : "#d0ad72";
-      mini.fillRect(ox + x * scale, oy + y * scale, scale, scale);
+      mini.fillRect(ox + x * scale, oy + y * scale, Math.max(1, scale), Math.max(1, scale));
     }
     if (isCurrent) {
       const x = ox + Math.round(pos.x) * scale;
@@ -571,6 +572,7 @@
     const floor = currentFloor();
     const panel = $("landmarks");
     panel.hidden = edit || map.adventure !== "shire" || floor.z !== 0;
+    $("shire-atlas-open").hidden = panel.hidden;
     if (panel.hidden) {
       landmarkFloor = null;
       return;
@@ -580,6 +582,16 @@
     const list = $("landmark-list");
     list.replaceChildren();
     const groups = new Map();
+    let localGroup;
+    let closest = Infinity;
+    for (const [key, marker] of Object.entries(floor.markers)) {
+      if (marker.type !== "notice") continue;
+      const [x, y] = key.split(",").map(Number);
+      const steps = distance(player, { x, y });
+      if (steps >= closest) continue;
+      closest = steps;
+      localGroup = Shire.landmarkRegion(marker.text.split(" · ", 1)[0]);
+    }
     for (const [key, marker] of Object.entries(floor.markers)) {
       if (marker.type !== "notice") continue;
       const [x, y] = key.split(",").map(Number);
@@ -596,18 +608,79 @@
         needsRefresh = true;
         canvas.focus({ preventScroll: true });
       });
-      const group = Shire.landmarkRegion(x, y);
+      const group = Shire.landmarkRegion(name);
       if (!groups.has(group)) {
         const section = document.createElement("details");
         const heading = document.createElement("summary");
         heading.textContent = group;
-        section.open = group === Shire.landmarkRegion(player.x, player.y);
+        section.open = group === localGroup;
         section.append(heading);
         groups.set(group, section);
         list.append(section);
       }
       groups.get(group).append(button);
     }
+  }
+
+  function openRegionalMap() {
+    const floor = currentFloor();
+    if (edit || map.adventure !== "shire" || floor.z !== 0) return;
+    const atlas = $("shire-atlas-canvas");
+    const context = atlas.getContext("2d");
+    const scale = atlas.width / map.width;
+    atlas.height = Math.round(map.height * scale);
+    context.imageSmoothingEnabled = false;
+    context.drawImage(minimapTerrain(floor), 0, 0, atlas.width, atlas.height);
+    context.font = "italic 14px Georgia";
+    context.textBaseline = "middle";
+    context.lineWidth = 3;
+    context.strokeStyle = "#26312b";
+    context.fillStyle = "#b8deea";
+    for (const [name, x, y, angle] of Shire.waterLabels) {
+      context.save();
+      context.translate(x * scale, y * scale);
+      context.rotate(angle);
+      context.strokeText(name, 0, 0);
+      context.fillText(name, 0, 0);
+      context.restore();
+    }
+    const destination = $("atlas-destination");
+    destination.replaceChildren();
+    const locations = Object.entries(floor.markers).filter(([, marker]) => marker.type === "notice")
+      .map(([key, marker]) => ({ key, name: marker.text.split(" · ", 1)[0] }));
+    for (const { key, name } of locations.sort((a, b) => a.name.localeCompare(b.name))) {
+      destination.append(new Option(name, key));
+    }
+    context.font = "bold 13px Georgia";
+    context.textBaseline = "middle";
+    context.lineWidth = 3;
+    context.strokeStyle = "#253021";
+    for (const { key, name } of locations) {
+      if (!Shire.atlasLabels.has(name)) continue;
+      const [x, y] = key.split(",").map(Number);
+      const px = (x + .5) * scale;
+      const py = (y + .5) * scale;
+      context.fillStyle = "#f4e0a6";
+      context.beginPath();
+      context.arc(px, py, 3, 0, 2 * Math.PI);
+      context.fill();
+      const [dx, dy] = Shire.labelOffsets[name] ?? [5, -8];
+      const labelX = Math.max(3, Math.min(px + dx, atlas.width - context.measureText(name).width - 4));
+      context.strokeText(name, labelX, py + dy);
+      context.fillText(name, labelX, py + dy);
+    }
+    const px = (player.x + .5) * scale;
+    const py = (player.y + .5) * scale;
+    context.strokeStyle = "#fff5de";
+    context.beginPath();
+    context.arc(px, py, 6, 0, 2 * Math.PI);
+    context.stroke();
+    context.fillStyle = "#d67c46";
+    context.beginPath();
+    context.arc(px, py, 4, 0, 2 * Math.PI);
+    context.fill();
+    stopActions();
+    $("shire-atlas").showModal();
   }
 
   function thumbnail(paint, resolution = 32) {
@@ -983,7 +1056,7 @@
         if (["path", "water", "river"].includes(type)) {
           const neighbors = [[x, y - 1], [x + 1, y], [x, y + 1], [x - 1, y]];
           neighbors.forEach(([nx, ny], side) => {
-            if (World.inside(map, nx, ny) && ["grass", "meadow"].includes(floor.ground[World.index(map, nx, ny)])) {
+            if (World.inside(map, nx, ny) && ["grass", "meadow", "heath", "marsh"].includes(floor.ground[World.index(map, nx, ny)])) {
               Art.edge(c, px(x), py(y), side);
             }
           });
@@ -993,7 +1066,7 @@
         const marker = floor.markers[key];
         if (object === "rug") Art.object(c, object, px(x), py(y), x, y);
         else if (object) draws.push({ y, depth: 0, draw: () => Art.object(c, object, px(x), py(y), x, y) });
-        if (marker?.type === "link" && (edit || !["smial", "door"].includes(object))) Art.icon(c, "link", px(x), py(y));
+        if (marker?.type === "link" && (edit || !["smial", "smialBlue", "smialRed", "door"].includes(object))) Art.icon(c, "link", px(x), py(y));
         if (marker?.type === "notice") draws.push({ y, depth: 0, draw: () => Art.signpost(c, px(x), py(y)) });
         if (marker?.type === "ledger" && (edit || !hasLedger)) Art.icon(c, "ledger", px(x), py(y));
         if (edit && marker) {
@@ -1232,8 +1305,7 @@
       Object.assign(player, { x: marker.x, y: marker.y, z: marker.z, motion: null });
       path = [];
       target = null;
-      const ferry = map.adventure === "shire" && marker.z === 0 && floor.z === 0 &&
-        ((x === 110 && y === 81) || (x === 116 && y === 81));
+      const ferry = map.adventure === "shire" && marker.z === 0 && floor.z === 0 && Shire.ferryAt(x, y);
       journal(ferry ? "You cross the Brandywine by ferry." : `Entered ${destination.name}.`);
       needsRefresh = true;
       return true;
@@ -1276,8 +1348,25 @@
     pendingInteraction = null;
     const trader = entities.find(entity => entity.type === "merchant" && entity.z === player.z && distance(player, entity) <= 1);
     if (trader) return openMerchant(trader);
-    if (useAt(player.x, player.y)) return;
+    if (map.adventure === "shire" && player.z === 0) {
+      const ferry = Shire.nearbyFerry(player);
+      if (ferry && currentFloor().markers[World.key(...ferry)]?.type === "link") {
+        useAt(...ferry);
+        return;
+      }
+    }
+    const floor = currentFloor();
+    if (floor.markers[World.key(player.x, player.y)]?.type === "link" && useAt(player.x, player.y)) return;
     const offsets = [[0, -1], [1, 0], [0, 1], [-1, 0], [1, -1], [1, 1], [-1, 1], [-1, -1]];
+    for (const [dx, dy] of offsets) {
+      const x = player.x + dx;
+      const y = player.y + dy;
+      if (floor.markers[World.key(x, y)]?.type === "link") {
+        useAt(x, y);
+        return;
+      }
+    }
+    if (useAt(player.x, player.y)) return;
     for (const [dx, dy] of offsets) if (useAt(player.x + dx, player.y + dy)) return;
     journal("Move beside a person, passage, or item to interact.");
   }
@@ -2209,7 +2298,9 @@
     if (size === null) return;
     const match = size.match(/^\s*(\d+)\s*[x×,]\s*(\d+)\s*$/i);
     const [width, height] = match ? match.slice(1).map(Number) : [];
-    if (![width, height].every(value => Number.isInteger(value) && value >= 8 && value <= 128)) return setStatus("Enter a width and height between 8 and 128 tiles.");
+    if (![width, height].every(value => Number.isInteger(value) && value >= 8 && value <= World.maxSize)) {
+      return setStatus(`Enter a width and height between 8 and ${World.maxSize} tiles.`);
+    }
     const before = snapshot();
     map = { version: 1, width, height, name: name.slice(0, 60), floors: [] };
     const floor = World.makeFloor(map, 0, "Surface", "grass");
@@ -2411,6 +2502,18 @@
     minimapZoom = 1;
     drawMinimap();
   });
+  $("shire-atlas-open").addEventListener("click", openRegionalMap);
+  $("shire-atlas-close").addEventListener("click", () => $("shire-atlas").close());
+  $("atlas-walk").addEventListener("click", () => {
+    const key = $("atlas-destination").value;
+    if (!key) return;
+    const [x, y] = key.split(",").map(Number);
+    const name = $("atlas-destination").selectedOptions[0].textContent;
+    $("shire-atlas").close();
+    walkTo({ x, y });
+    if (!path.length && (player.x !== x || player.y !== y)) journal(`There is no clear path to ${name}.`);
+    canvas.focus({ preventScroll: true });
+  });
 
   function changeGameZoom(direction) {
     gameZoom = Math.min(2.5, Math.max(.75, gameZoom + direction * .25));
@@ -2508,7 +2611,7 @@
   });
 
   window.addEventListener("keydown", event => {
-    if ($("character-screen").open || event.target.matches("input, select, textarea") || event.altKey) return;
+    if ($("character-screen").open || $("shire-atlas").open || event.target.matches("input, select, textarea") || event.altKey) return;
     const key = event.key.toLowerCase();
     if (edit && (event.metaKey || event.ctrlKey) && key === "z") {
       event.preventDefault();
@@ -2557,7 +2660,7 @@
   new ResizeObserver(resize).observe(canvas);
 
   function frame(now) {
-    if (!edit && !document.hidden && !$("character-screen").open) {
+    if (!edit && !document.hidden && !$("character-screen").open && !$("shire-atlas").open) {
       updateGame(now);
       if (needsRefresh || Math.floor((now - hunt.start) / 1000) !== huntSecond) updateHunt(now);
       if (needsRefresh) savePending = true;

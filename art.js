@@ -15,7 +15,8 @@ const Art = (() => {
     timber: "#8a6747", sideTimber: "#8a6747", roof: "#7e5043", fence: "#92724d", smial: "#b3af64",
     smialBlue: "#a9ad73", smialRed: "#b1a965", thatch: "#b2904e", thatchChimney: "#b2904e",
     tileChimney: "#7e5043", cottageWindow: "#a47d54", stoneWindow: "#a29b8d",
-    millWheel: "#694727", partyTree: "#39522a", appleTree: "#536535", hedge: "#506132"
+    millWheel: "#694727", partyTree: "#39522a", appleTree: "#536535", hedge: "#506132",
+    heath: "#75735a", marsh: "#5e6543",
   };
 
   function sprite(c, id, x, y) {
@@ -45,9 +46,25 @@ const Art = (() => {
       c.fillRect(x, y, size, size);
       return;
     }
+    if (type === "heath" || type === "marsh") {
+      const variant = ((Math.imul(vx, 73856093) ^ Math.imul(vy, 19349663)) >>> 0) % 4;
+      const id = type + variant;
+      c.drawImage(terrainTiles[id] ??= terrainTile(type, variant), x, y);
+      return;
+    }
     draw(c, sprites.grounds[type], x, y, vx, vy, phase);
   }
 
+  const terrainTiles = {};
+  function terrainTile(type, variant) {
+    const image = document.createElement("canvas");
+    image.width = image.height = size;
+    const context = image.getContext("2d");
+    draw(context, sprites.grounds[type === "heath" ? "grass" : "meadow"], 0, 0, variant, 0, 0);
+    context.fillStyle = type === "heath" ? "#918c7c80" : "#525e3c66";
+    context.fillRect(0, 0, size, size);
+    return image;
+  }
   function edge(c, x, y, side) {
     draw(c, sprites.edges[side], x, y);
   }

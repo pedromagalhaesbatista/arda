@@ -8,7 +8,7 @@
   const mini = minimap.getContext("2d");
   const tile = Art.size;
 
-  const creatureNames = { rat: "Cellar rat", wolf: "Wolf" };
+  const creatureNames = Object.fromEntries(Object.keys(Hunting.creatures).map(id => [id, World.markers[id]]));
   const skills = {
     sword: { label: "sword fighting", value: "skill", meter: "sword-progress", requirement: "Equip a sword" },
     shielding: { label: "shielding", value: "shield-skill", meter: "shield-progress", requirement: "Equip a shield" },
@@ -16,7 +16,7 @@
     fist: { label: "fist fighting", value: "fist-skill", meter: "fist-progress", requirement: "Stow your weapon" },
     magic: { label: "magic", value: "magic-level", meter: "magic-progress" },
   };
-  const markerActions = { keeper: "Talk", miller: "Talk", gardener: "Talk", ledger: "Take", notice: "Read" };
+  const markerActions = { keeper: "Talk", miller: "Talk", gardener: "Talk", merchant: "Trade", ledger: "Take", notice: "Read" };
   const movement = {
     w: [0, -1], a: [-1, 0], s: [0, 1], d: [1, 0],
     arrowup: [0, -1], arrowleft: [-1, 0], arrowdown: [0, 1], arrowright: [1, 0]
@@ -59,7 +59,11 @@
   let entities = [];
   let loot = [];
   let openLoot = null;
+  let merchant = null;
+  let shopMode = "buy";
+  let huntKills = {};
   let nextHeal = 0;
+  let nextMana = 0;
   let consoleChannel = "all";
   let minimapZoom = 1;
   let gameZoom = 1;
@@ -157,15 +161,18 @@
     entities = [];
     for (const floor of map.floors) {
       for (const [key, marker] of Object.entries(floor.markers)) {
-        if (!["keeper", "gardener", "miller", "wolf", "rat"].includes(marker.type)) continue;
+        const creature = Hunting.creatures[marker.type];
+        if (!creature && !["keeper", "gardener", "miller", "merchant"].includes(marker.type)) continue;
         const [x, y] = key.split(",").map(Number);
-        const hp = marker.type === "wolf" ? 16 : 8;
+        const hp = creature?.hp ?? 8;
         entities.push({ x, y, z: floor.z, origin: { x, y }, type: marker.type, hp, maxHp: hp, face: OpenTibia.Direction.South, nextMove: 0, nextHit: 0 });
       }
     }
     loot = [];
+    huntKills = {};
     closeLoot();
-    nextHeal = 0;
+    closeMerchant();
+    nextHeal = nextMana = 0;
     lastTick = 0;
     target = null;
     path = [];
@@ -188,7 +195,9 @@
       const { z } = entity;
       const hp = atSpawn ? entity.maxHp : entity.hp;
       const face = atSpawn ? OpenTibia.Direction.South : entity.face;
-      return [Saves.actorKey(entity), { x, y, z, hp, face }];
+      const state = { x, y, z, hp, face };
+      if (!atSpawn && entity.respawnAt) state.respawnAt = entity.respawnAt;
+      return [Saves.actorKey(entity), state];
     }));
   }
 
@@ -203,7 +212,7 @@
         x: position.x, y: position.y, z, hp, maxHp, xp, level, face, kit, stance, pursuit,
         vocation, sword, shielding, distance, fist, mana, magic, spellState,
       },
-      quest, ratsDefeated, hasLedger, creatures: creatureSnapshot(), loot,
+      quest, ratsDefeated, hasLedger, creatures: creatureSnapshot(), loot, huntKills,
     };
   }
 
@@ -229,11 +238,15 @@
     return confirm("The current session could not be saved. Switch and leave those changes behind?");
   }
 
+  function compatibleRevisions() {
+    return selectedWorld === "shire" ? Shire.previousRevisions : [];
+  }
+
   function resumePlay(id) {
     const revision = Saves.revision(map);
     const savedMap = revision === worldRevisions[selectedWorld];
     if (!id && savedMap) {
-      try { id = Saves.selectedCharacter(selectedWorld, revision); } catch {
+      try { id = Saves.selectedCharacter(selectedWorld, revision, compatibleRevisions()); } catch {
         // The original slot is available when browser settings cannot be read.
       }
     }
@@ -267,8 +280,9 @@
       const result = Saves.read(key, map, hostiles);
       saveRaw = result.raw;
       let data = result.value;
-      if (!data && selectedWorld === "shire" && id === Saves.originalCharacter) {
-        const priorKey = Saves.progressKey("shire", Shire.previousRevision);
+      for (const prior of compatibleRevisions()) {
+        if (data) break;
+        const priorKey = Saves.progressKey(selectedWorld, prior, id);
         data = Saves.read(priorKey, map, hostiles, value => Saves.relocate(value, map, entities)).value;
       }
       saveStatus(result.value ? "Saved on this device" : "Autosave on");
@@ -282,10 +296,11 @@
       const readyAt = performance.now() + Combat.swingInterval;
       for (const entity of entities) {
         if (!creatureNames[entity.type]) continue;
-        const { x, y, hp, face } = data.creatures[Saves.actorKey(entity)];
-        Object.assign(entity, { x, y, hp, face, nextHit: readyAt });
+        const { x, y, hp, face, respawnAt } = data.creatures[Saves.actorKey(entity)];
+        Object.assign(entity, { x, y, hp, face, respawnAt, nextHit: readyAt });
       }
       ({ quest, ratsDefeated, hasLedger, loot } = data);
+      huntKills = data.huntKills ?? {};
       return "restored";
     } catch {
       saveBlocked = true;
@@ -322,7 +337,7 @@
       const data = JSON.parse(await file.text());
       if (edit || saveKey !== key) return;
       if (data?.format !== "arda-save" || data.version !== 1) throw new Error("Choose an Arda character save.");
-      const previousShire = selectedWorld === "shire" && data.revision === Shire.previousRevision;
+      const previousShire = compatibleRevisions().includes(data.revision);
       if (data.revision !== playRevision && !previousShire) throw new Error("Open the matching map before importing this save.");
       const progress = previousShire ? Saves.relocate(data.progress, map, entities) : data.progress;
       if (!Saves.valid(progress, map, entities.filter(entity => creatureNames[entity.type]))) {
@@ -392,7 +407,7 @@
     $("new-character-form").reset();
     $("new-character-details").textContent = "";
     try {
-      const roster = Saves.listCharacters(selectedWorld, playRevision);
+      const roster = Saves.listCharacters(selectedWorld, playRevision, compatibleRevisions());
       for (const entry of roster) {
         const current = entry.id === activeCharacter;
         const row = document.createElement("li");
@@ -436,7 +451,7 @@
       return characterError(new Error("Enter a character name and choose a vocation."));
     }
     try {
-      if (Saves.listCharacters(selectedWorld, playRevision).some(entry => entry.name.toLowerCase() === name.toLowerCase())) {
+      if (Saves.listCharacters(selectedWorld, playRevision, compatibleRevisions()).some(entry => entry.name.toLowerCase() === name.toLowerCase())) {
         return characterError(new Error("A character with that name already exists in this world."));
       }
       if (!canLeaveCharacter()) return;
@@ -600,19 +615,21 @@
     const tracker = $("bestiary");
     const entries = Object.entries(creatureNames).map(([type, name]) => {
       const population = entities.filter(entity => entity.type === type);
-      return { type, name, count: population.filter(entity => entity.hp === 0).length, total: population.length };
+      const repeatable = Hunting.creatures[type].respawns;
+      const count = repeatable ? huntKills[type] ?? 0 : population.filter(entity => entity.hp === 0).length;
+      return { type, name, count, total: population.length, repeatable };
     }).filter(entry => entry.total > 0);
     const signature = JSON.stringify(entries);
     if (tracker.dataset.counts === signature) return;
     tracker.dataset.counts = signature;
     tracker.replaceChildren();
-    for (const { type, name, count, total } of entries) {
+    for (const { type, name, count, total, repeatable } of entries) {
       const row = document.createElement("li");
       const label = document.createElement("span");
       const progress = document.createElement("span");
       label.textContent = name;
-      progress.textContent = `${count}/${total}`;
-      progress.title = "Defeated in this world";
+      progress.textContent = repeatable ? `${count} kills` : `${count}/${total}`;
+      progress.title = repeatable ? "Lifetime kills for this character" : "Defeated in this world";
       row.append(thumbnail(context => Art.preview(context, type, "markers"), 20), label, progress);
       tracker.append(row);
     }
@@ -747,6 +764,8 @@
   }
 
   function equipItem(id) {
+    const required = Equipment.items[id].vocation;
+    if (required && player.vocation !== required) return journal(`${Equipment.items[id].name} requires the ${Vocations.get(required).name} vocation.`);
     if (!Equipment.equip(player.kit, id)) return;
     journal(`You equip ${Equipment.items[id].name}.`);
     inventoryChanged();
@@ -789,9 +808,9 @@
     } else if (origin === "loot") {
       label = `Take ${Equipment.items[id].name}`;
       use = () => takeLoot(id);
-    } else if (id === "herb") {
-      label = "Use healing herb";
-      use = heal;
+    } else if (id === "herb" || id === "manaDraught") {
+      label = id === "herb" ? "Use healing herb" : "Use mana draught";
+      use = id === "herb" ? heal : drinkMana;
     } else if (Equipment.items[id].slot) {
       label = `${origin === "bag" ? "Equip" : "Unequip"} ${Equipment.items[id].name}`;
       use = () => origin === "bag" ? equipItem(id) : stowItem(slot);
@@ -804,7 +823,7 @@
       else showMenu(event, [["Look", () => journal(description)], ...(label === description ? [] : [[label, use]])]);
     });
 
-    if (id !== "pack" && (origin === "loot" || Equipment.items[id].slot || id === "herb")) {
+    if (id !== "pack" && (origin === "loot" || Equipment.items[id].slot || id === "herb" || id === "manaDraught")) {
       button.draggable = true;
       button.addEventListener("dragstart", event => {
         draggedItem = { id, origin, slot, pile: origin === "loot" ? openLoot : null };
@@ -849,6 +868,7 @@
     $("gear-armor").textContent = gear.armor;
     const coins = bag.coin ?? 0;
     $("coins").textContent = `${coins} ${coins === 1 ? "coin" : "coins"}`;
+    if (merchant) updateMerchant();
 
     equipped.replaceChildren();
     for (const [slot, label] of Object.entries(Equipment.slots)) {
@@ -984,7 +1004,7 @@
             }
             Art.actor(c, entity.type ?? "player", x, y, entity.face, pos.step);
             const friendly = entity !== player && !creatureNames[entity.type];
-            if (entity.type === "miller" || entity.type === "gardener") {
+            if (["miller", "gardener", "merchant"].includes(entity.type)) {
               c.font = "bold 10px system-ui";
               c.textAlign = "center";
               c.lineWidth = 2;
@@ -1095,6 +1115,7 @@
     const interval = OpenTibia.WALK_DURATION_MS * (dx && dy ? 1.5 : 1);
     moveActor(player, x, y, now, interval - 15);
     if (openLoot && distance(player, openLoot) > 1) closeLoot();
+    if (merchant && distance(player, merchant) > 1) closeMerchant();
     nextMove = now + interval;
     needsRefresh = true;
     return true;
@@ -1183,6 +1204,7 @@
         return true;
       }
       closeLoot();
+      closeMerchant();
       previewFloor = null;
       Object.assign(player, { x: marker.x, y: marker.y, z: marker.z, motion: null });
       path = [];
@@ -1204,6 +1226,10 @@
       talkToMiller();
       return true;
     }
+    if (marker?.type === "merchant") {
+      openMerchant(here(x, y));
+      return true;
+    }
     if (marker?.type === "gardener") {
       journal("Sam Gamgee: Bag End’s the green door up the lane. You’ll find the mill beside The Water, east of here.");
       return true;
@@ -1223,6 +1249,8 @@
   function interact() {
     path = [];
     pendingInteraction = null;
+    const trader = entities.find(entity => entity.type === "merchant" && entity.z === player.z && distance(player, entity) <= 1);
+    if (trader) return openMerchant(trader);
     if (useAt(player.x, player.y)) return;
     const offsets = [[0, -1], [1, 0], [0, 1], [-1, 0], [1, -1], [1, 1], [-1, 1], [-1, -1]];
     for (const [dx, dy] of offsets) if (useAt(player.x + dx, player.y + dy)) return;
@@ -1231,6 +1259,84 @@
 
   function lootAt(x, y) {
     return loot.find(pile => pile.z === player.z && pile.x === x && pile.y === y);
+  }
+
+  function openMerchant(trader) {
+    if (!trader || trader.z !== player.z || distance(player, trader) > 1) return;
+    stopActions();
+    closeLoot();
+    merchant = trader;
+    shopMode = "buy";
+    $("merchant-panel").hidden = false;
+    updateMerchant();
+  }
+
+  function closeMerchant() {
+    merchant = null;
+    $("merchant-panel").hidden = true;
+  }
+
+  function updateMerchant() {
+    const { bag } = player.kit;
+    $("shop-coins").textContent = `${bag.coin ?? 0} coins`;
+    for (const button of $("merchant-panel").querySelectorAll("[data-shop]")) {
+      button.setAttribute("aria-pressed", String(button.dataset.shop === shopMode));
+    }
+    const list = $("shop-stock");
+    const focused = document.activeElement.dataset.tradeItem;
+    list.replaceChildren();
+    const buying = shopMode === "buy";
+    const stock = buying ? Hunting.buy : Hunting.sell;
+    for (const [id, price] of Object.entries(stock)) {
+      const item = Equipment.items[id];
+      if (!buying && !bag[id]) continue;
+      const row = document.createElement("li");
+      const label = document.createElement("span");
+      label.textContent = buying ? item.name : `${item.name} ×${bag[id]}`;
+      label.title = Equipment.description(id);
+      if (item.vocation) {
+        const requirement = document.createElement("small");
+        requirement.textContent = Vocations.get(item.vocation).name;
+        label.append(requirement);
+      }
+      const button = document.createElement("button");
+      button.type = "button";
+      button.dataset.tradeItem = id;
+      button.textContent = `${price}c`;
+      button.setAttribute("aria-label", `${buying ? "Buy" : "Sell"} ${item.name} for ${price} coins`);
+      button.disabled = buying && ((bag.coin ?? 0) < price || Boolean(item.vocation && item.vocation !== player.vocation));
+      button.addEventListener("click", () => tradeItem(id));
+      row.append(thumbnail(context => Art.icon(context, id), 20), label, button);
+      list.append(row);
+      if (id === focused && !button.disabled) button.focus({ preventScroll: true });
+    }
+    if (!list.childElementCount) {
+      const empty = document.createElement("li");
+      empty.className = "panel-note";
+      empty.textContent = "No goods in your backpack to sell.";
+      list.append(empty);
+    }
+  }
+
+  function tradeItem(id) {
+    if (!merchant || edit || merchant.z !== player.z || distance(player, merchant) > 1) return;
+    const buying = shopMode === "buy";
+    const stock = buying ? Hunting.buy : Hunting.sell;
+    if (!Object.hasOwn(stock, id)) return;
+    const price = stock[id];
+    const { bag } = player.kit;
+    const { name, vocation } = Equipment.items[id];
+    if (buying ? (bag.coin ?? 0) < price || (vocation && vocation !== player.vocation) : !bag[id]) return;
+    const quantity = buying ? 1 : -1;
+    Equipment.add(player.kit, id, quantity);
+    Equipment.add(player.kit, "coin", -quantity * price);
+    if (!saveProgress(true)) {
+      Equipment.add(player.kit, id, -quantity);
+      Equipment.add(player.kit, "coin", quantity * price);
+      return journal("The trade could not be saved.", "loot");
+    }
+    journal(`You ${buying ? "buy" : "sell"} ${name.toLowerCase()} for ${price} coins.`, "loot");
+    inventoryChanged();
   }
 
   function closeLoot() {
@@ -1537,7 +1643,8 @@
     }
 
     stopPractice();
-    const power = Math.floor(player.level / 2) + (spell.skill ? Math.floor(player[spell.skill].level / 4) : player.magic.level);
+    const power = Math.floor(player.level / 2) + (spell.skill ? Math.floor(player[spell.skill].level / 4) : player.magic.level) +
+      Equipment.spellBonus(player.kit, spell.group);
     const advanced = Magic.spend(player, id);
     journal(`You say: ${spell.words}`, "combat");
     showSpellEffect(player, "#a5caff", now);
@@ -1573,6 +1680,7 @@
     else if (id === "use") interact();
     else if (id === "stop") stopActions();
     else if (id === "herb") heal();
+    else if (id === "manaDraught") drinkMana();
     else if (Object.hasOwn(Magic.spells, id)) castSpell(id);
     else if (id) {
       const slot = Equipment.items[id].slot;
@@ -1593,7 +1701,7 @@
       button.type = "button";
       const hotkey = `F${index + 1}`;
       const spell = Magic.spells[id];
-      const label = spell?.name ?? ({ attack: "Attack", use: "Use nearby", stop: "Stop", herb: "Use healing herb" })[id] ??
+      const label = spell?.name ?? ({ attack: "Attack", use: "Use nearby", stop: "Stop", herb: "Use healing herb", manaDraught: "Use mana draught" })[id] ??
         (id ? Equipment.items[id].name : "Empty");
       button.dataset.actionIndex = index;
       button.title = id ? `${label} (${hotkey})` : `${hotkey} · Drag an item or spell here`;
@@ -1614,9 +1722,9 @@
         icon.setAttribute("aria-hidden", "true");
         button.append(icon);
       }
-      if (id === "herb") {
+      if (id === "herb" || id === "manaDraught") {
         const count = document.createElement("small");
-        count.textContent = player.kit.bag.herb ?? 0;
+        count.textContent = player.kit.bag[id] ?? 0;
         button.append(count);
       }
       button.addEventListener("click", () => {
@@ -1680,15 +1788,19 @@
     journal(damage ? `${verb} the ${name.toLowerCase()} for ${damage}.` : `You miss the ${name.toLowerCase()}.`, "combat");
     if (target.hp === 0) {
       if (target.type === "rat") ratsDefeated++;
-      const xp = target.type === "rat" ? 9 : 14;
-      const item = target.type === "wolf" ? (Combat.roll(0, 1) ? "pendant" : "ring") : null;
+      const { xp, coins, drops, respawns } = Hunting.creatures[target.type];
+      const item = drops?.[Combat.roll(0, drops.length - 1)];
+      if (respawns) {
+        target.respawnAt = Date.now() + Hunting.respawnDelay;
+        huntKills[target.type] = (huntKills[target.type] ?? 0) + 1;
+      }
       const pile = loot.find(entry => entry.x === target.x && entry.y === target.y && entry.z === target.z);
       if (pile) {
-        pile.coins += target.type === "rat" ? 1 : 3;
+        pile.coins += coins;
         if (item) pile.items.push(item);
         if (pile === openLoot) openContainer(pile);
       } else {
-        loot.push({ x: target.x, y: target.y, z: target.z, kind: target.type, coins: target.type === "rat" ? 1 : 3, items: item ? [item] : [] });
+        loot.push({ x: target.x, y: target.y, z: target.z, kind: target.type, coins, items: item ? [item] : [] });
       }
       journal(`${name} defeated. You gain ${xp} experience.`, "combat");
       player.xp += xp;
@@ -1727,7 +1839,36 @@
     inventoryChanged();
   }
 
+  function drinkMana() {
+    const now = performance.now();
+    if (now < nextMana) return;
+    const capacity = Vocations.maxMana(player.level, player.vocation);
+    if (player.mana === capacity) return journal("You are already at full mana.");
+    if (!player.kit.bag.manaDraught) return journal("Your backpack is out of mana draughts.");
+    const restored = Math.min(Equipment.items.manaDraught.mana, capacity - player.mana);
+    player.mana += restored;
+    nextMana = now + 1000;
+    Equipment.add(player.kit, "manaDraught", -1);
+    showCombatText(player, `+${restored} mana`, "#aac6ff", now);
+    journal(`You drink a mana draught and recover ${restored} mana.`, "combat");
+    inventoryChanged();
+  }
+
+  function respawnCreatures(now) {
+    const time = Date.now();
+    for (const entity of entities) {
+      if (!entity.respawnAt || time < entity.respawnAt) continue;
+      const { x, y } = entity.origin;
+      if (player.z === entity.z && distance(player, entity.origin) <= Hunting.leaveDistance) continue;
+      if (here(x, y, entity.z)) continue;
+      Object.assign(entity, { x, y, hp: entity.maxHp, face: OpenTibia.Direction.South, respawnAt: null,
+        motion: null, nextHit: now + Combat.swingInterval, nextMove: now });
+      needsRefresh = true;
+    }
+  }
+
   function enemies(now) {
+    respawnCreatures(now);
     const floor = currentFloor();
     for (const entity of entities) {
       if (!creatureNames[entity.type] || entity.z !== player.z || entity.hp <= 0) continue;
@@ -1736,7 +1877,7 @@
       if (inReach && now >= entity.nextHit) {
         stopPractice();
         entity.nextHit = now + Combat.swingInterval;
-        const incoming = Combat.roll(1, entity.type === "rat" ? 7 : 13);
+        const incoming = Combat.roll(1, Hunting.creatures[entity.type].damage);
         const result = Combat.mitigate(player, incoming, now < nextAttack);
         const damage = Math.min(player.hp, result.damage);
         player.hp -= damage;
@@ -1751,6 +1892,7 @@
         if (player.hp === 0) {
           const start = World.findStart(map);
           closeLoot();
+          closeMerchant();
           previewFloor = null;
           Object.assign(player, { ...start, hp: player.maxHp, motion: null });
           path = [];
@@ -1976,6 +2118,7 @@
     if (enable) {
       stopPractice();
       saveProgress(true);
+      closeMerchant();
       editFloor = player.z;
       editorCenter = { x: player.x, y: player.y };
       syncEditor();
@@ -2301,6 +2444,13 @@
     });
   }
   $("close-loot").addEventListener("click", closeLoot);
+  $("close-merchant").addEventListener("click", closeMerchant);
+  for (const button of $("merchant-panel").querySelectorAll("[data-shop]")) {
+    button.addEventListener("click", () => {
+      shopMode = button.dataset.shop;
+      updateMerchant();
+    });
+  }
   $("take-all").addEventListener("click", () => takeLoot());
 
   function updateMouseHint() {

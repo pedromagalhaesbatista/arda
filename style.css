@@ -384,6 +384,15 @@ h1 { font: bold 14px Arial, sans-serif; }
 .training-controls { display: flex; gap: 3px; padding: 0 4px 4px; }
 .training-controls button { flex: 1; padding: 2px; font-size: 11px; }
 .training-controls button[aria-pressed="true"] { border-color: #dbbe83; color: #ffdb9a; }
+.shop-controls { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 4px; padding: 4px; }
+.shop-controls button, #shop-stock button { padding: 2px 4px; border-radius: 0; font-size: 11px; }
+#shop-stock { display: grid; list-style: none; padding: 0 4px 4px; margin: 0; }
+#shop-stock li { display: grid; grid-template-columns: 20px minmax(0, 1fr) auto; align-items: center; gap: 3px; padding: 3px 0; border-top: 1px solid var(--line); }
+#shop-stock li.panel-note { display: block; }
+#shop-stock span { overflow-wrap: anywhere; }
+#shop-stock small { display: block; color: var(--gold); }
+#shop-stock canvas { image-rendering: pixelated; }
+#close-merchant { padding: 0 4px; line-height: 1; border-radius: 0; }
 .vocation { padding: 3px 5px; border-bottom: 1px solid var(--line); }
 .vocation summary { cursor: pointer; color: #e2c48a; }
 #vocation-form { display: grid; gap: 4px; padding: 4px 0; }

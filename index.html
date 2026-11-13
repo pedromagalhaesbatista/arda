@@ -14,6 +14,7 @@
   <script defer src="vocations.js"></script>
   <script defer src="equipment.js"></script>
   <script defer src="magic.js"></script>
+  <script defer src="hunting.js"></script>
   <script defer src="saves.js"></script>
   <script defer src="layout.js"></script>
   <script defer src="game.js"></script>
@@ -233,6 +234,20 @@
           </div>
           <div class="slots" id="loot-slots"></div>
           <button id="take-all" class="take-all">Take all</button>
+        </section>
+        <section id="merchant-panel" class="panel" data-window="merchant" hidden>
+          <div class="panel-heading">
+            <h3><img src="opentibia/ui/inventory.png" alt="">Bywater Outfitter</h3>
+            <button id="close-merchant" aria-label="Close shop">×</button>
+          </div>
+          <div class="shop-controls">
+            <div role="group" aria-label="Trade">
+              <button type="button" data-shop="buy" aria-pressed="true">Buy</button>
+              <button type="button" data-shop="sell" aria-pressed="false">Sell</button>
+            </div>
+            <span id="shop-coins"></span>
+          </div>
+          <ul id="shop-stock" aria-label="Shop stock"></ul>
         </section>
         <section id="backpack-panel" class="panel pack" data-window="backpack">
           <div class="panel-heading"><h3>Backpack</h3><span id="coins">0 coin</span></div>

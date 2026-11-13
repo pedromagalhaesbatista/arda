@@ -211,8 +211,21 @@ const Shire = (() => {
       marker(surface, x, y, "notice", { text });
     }
     for (const [x, y] of [[21, 15], [34, 20], [52, 8]]) delete surface.objects[World.key(x, y)];
+
+    track(51, 32, 55, 34);
+    track(55, 34, 59, 36);
+    track(59, 36, 62, 38);
+    for (const [x, y, type, fields] of [
+      [47, 32, "merchant"],
+      [47, 33, "notice", { text: "Bywater Outfitter · Buy supplies and sell your hunting loot beside the Green Dragon." }],
+      [54, 33, "notice", { text: "Bywater Hunting Trail · Follow the path east for bank rats and marsh wolves. Leave the trail to let the creatures return." }],
+      [56, 35, "bankRat"], [59, 38, "bankRat"], [63, 39, "marshWolf"],
+    ]) {
+      delete surface.objects[World.key(x, y)];
+      marker(surface, x, y, type, fields);
+    }
     return World.validate(map);
   }
 
-  return { create, previousRevision: "e6258651b64f76aa" };
+  return { create, previousRevisions: ["b902d48dab786345", "e6258651b64f76aa"] };
 })();

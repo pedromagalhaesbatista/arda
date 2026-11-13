@@ -13,7 +13,11 @@ const World = (() => {
     partyTree: "Party tree", appleTree: "Apple tree", hedge: "Hedge", reeds: "Reeds",
     bench: "Bench", bunting: "Bunting", basket: "Basket", hearth: "Hearth", rug: "Rug",
   };
-  const markers = { start: "Player start", link: "Floor link", keeper: "Innkeeper", miller: "Miller", gardener: "Sam Gamgee", ledger: "Mill ledger", notice: "Signpost", rat: "Cellar rat", wolf: "Wolf" };
+  const markers = {
+    start: "Player start", link: "Floor link", keeper: "Innkeeper", miller: "Miller", gardener: "Sam Gamgee",
+    ledger: "Mill ledger", notice: "Signpost", rat: "Cellar rat", wolf: "Wolf",
+    merchant: "Bywater outfitter", bankRat: "Bank rat", marshWolf: "Marsh wolf",
+  };
   const solid = new Set(["tree", "pine", "rock", "wall", "sideWall", "timber", "sideTimber", "roof", "fence", "barrel", "lamp", "millWheel", "bank", "table", "bed", "chest", "partyTree", "appleTree", "hedge", "bench", "basket", "hearth"]);
   const key = (x, y) => `${x},${y}`;
   const index = (map, x, y) => y * map.width + x;

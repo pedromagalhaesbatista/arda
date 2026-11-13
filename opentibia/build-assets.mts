@@ -26,8 +26,10 @@ const items = {
   sword: 1689, broadsword: 1694, bow: 1873, buckler: 1915, cap: 1943, tunic: 2010,
   trousers: 2079, boots: 2091, pack: 2099, pendant: 2139, ring: 2147, shireRing: 2148,
   herb: 1455, coin: 1187, link: 1005, ledger: 1904,
+  manaDraught: 2128, ratTail: 2172, wolfPelt: 2162, oakShield: 1923, yewBow: 1886,
+  handwraps: 2155, riverPendant: 2140, emberRing: 2150,
 };
-const actors = { player: 17, keeper: 19, miller: 19, gardener: 16, rat: 24, wolf: 6 };
+const actors = { player: 17, keeper: 19, miller: 19, gardener: 16, rat: 24, wolf: 6, merchant: 19, bankRat: 24, marshWolf: 6 };
 
 function select(catalog: ThingType[], table: Record<string, number>) {
   return Object.fromEntries(Object.entries(table).map(([name, id]) => {

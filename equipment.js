@@ -21,6 +21,14 @@ const Equipment = (() => {
     ring: { name: "Iron ring", slot: "ring", armor: 1 },
     shireRing: { name: "Bywater brass ring", slot: "ring", armor: 2 },
     herb: { name: "Healing herb", healing: 12 },
+    manaDraught: { name: "Mana draught", mana: 14 },
+    ratTail: { name: "Bank rat tail" },
+    wolfPelt: { name: "Marsh wolf pelt" },
+    oakShield: { name: "Bywater oak shield", slot: "shield", defense: 14, vocation: "knight" },
+    yewBow: { name: "Shire yew bow", slot: "weapon", attack: 14, defense: 3, skill: "distance", range: 5, vocation: "paladin" },
+    handwraps: { name: "Reinforced handwraps", slot: "weapon", attack: 14, defense: 4, skill: "fist", vocation: "monk" },
+    riverPendant: { name: "Riverstone pendant", slot: "amulet", armor: 1, healingPower: 4, vocation: "druid" },
+    emberRing: { name: "Ember ring", slot: "ring", armor: 1, spellPower: 3, vocation: "sorcerer" },
     coin: { name: "Coin" },
   };
 
@@ -63,6 +71,10 @@ const Equipment = (() => {
     if (item.defense) parts.push(`Defense ${item.defense}`);
     if (item.armor) parts.push(`Armor ${item.armor}`);
     if (item.healing) parts.push(`Restores up to ${item.healing} health`);
+    if (item.mana) parts.push(`Restores up to ${item.mana} mana`);
+    if (item.healingPower) parts.push(`Healing spells +${item.healingPower}`);
+    if (item.spellPower) parts.push(`Attack spells +${item.spellPower}`);
+    if (item.vocation) parts.push(Vocations.get(item.vocation).name);
     return parts.join(" · ");
   }
 
@@ -76,7 +88,12 @@ const Equipment = (() => {
     };
   }
 
-  return { slots, items, starterKit, add, equip, stow, description, stats };
+  function spellBonus(kit, group) {
+    const bonus = group === "healing" ? "healingPower" : "spellPower";
+    return Object.values(kit.worn).reduce((total, id) => total + (items[id][bonus] ?? 0), 0);
+  }
+
+  return { slots, items, starterKit, add, equip, stow, description, stats, spellBonus };
 })();
 
 const Combat = (() => {

@@ -16,7 +16,7 @@ const Art = (() => {
     smialBlue: "#a9ad73", smialRed: "#b1a965", thatch: "#b2904e", thatchChimney: "#b2904e",
     tileChimney: "#7e5043", cottageWindow: "#a47d54", stoneWindow: "#a29b8d",
     millWheel: "#694727", partyTree: "#39522a", appleTree: "#536535", hedge: "#506132",
-    heath: "#75735a", marsh: "#5e6543",
+    heath: "#75735a", marsh: "#5e6543", road: "#b69d73", woodland: "#45562d",
   };
 
   function sprite(c, id, x, y) {
@@ -46,7 +46,7 @@ const Art = (() => {
       c.fillRect(x, y, size, size);
       return;
     }
-    if (type === "heath" || type === "marsh") {
+    if (["heath", "marsh", "road", "woodland"].includes(type)) {
       const variant = ((Math.imul(vx, 73856093) ^ Math.imul(vy, 19349663)) >>> 0) % 4;
       const id = type + variant;
       c.drawImage(terrainTiles[id] ??= terrainTile(type, variant), x, y);
@@ -60,9 +60,16 @@ const Art = (() => {
     const image = document.createElement("canvas");
     image.width = image.height = size;
     const context = image.getContext("2d");
-    draw(context, sprites.grounds[type === "heath" ? "grass" : "meadow"], 0, 0, variant, 0, 0);
-    context.fillStyle = type === "heath" ? "#918c7c80" : "#525e3c66";
+    const base = { heath: "grass", marsh: "meadow", woodland: "grass", road: "path" }[type];
+    draw(context, sprites.grounds[base], 0, 0, variant, 0, 0);
+    context.fillStyle = { heath: "#918c7c80", marsh: "#525e3c66", woodland: "#2a432168", road: "#a0804742" }[type];
     context.fillRect(0, 0, size, size);
+    if (type === "woodland" || type === "road") {
+      for (let i = 0; i < 22; i++) {
+        context.fillStyle = type === "woodland" ? ["#79603e", "#777046", "#344625"][i % 3] : ["#b2a487", "#97856b", "#c6b493"][i % 3];
+        context.fillRect((i * 23 + variant * 17) % 31, (i * 19 + i * i + variant * 7) % 32, i % 4 ? 1 : 2, 1);
+      }
+    }
     return image;
   }
   function edge(c, x, y, side) {
@@ -196,6 +203,142 @@ const Art = (() => {
     }
   }
 
+  const structures = {};
+  const pitches = {
+    clay: ["#422f2a", "#634036", "#805044", "#955c4b", "#a96a55", "#bb7b60"],
+    slate: ["#2c3134", "#42484a", "#55595a", "#656964", "#77796d", "#939081"],
+    straw: ["#56402a", "#735432", "#92713e", "#a7864b", "#b89953", "#ceb06a"],
+  };
+  for (const part of Object.keys(World.objects)) {
+    const roof = Object.keys(pitches).find(name => part.startsWith(name));
+    if (roof) mapColors[part] = pitches[roof][3];
+    else if (part.startsWith("ashlar")) mapColors[part] = mapColors.wall;
+    else if (part.startsWith("framed")) mapColors[part] = mapColors.timber;
+  }
+  const detail = (x, y, variant) => (Math.imul(x + variant * 59, 73856093) ^ Math.imul(y + 37, 19349663)) >>> 0;
+
+  function structure(type, variant) {
+    const id = type + variant;
+    if (structures[id]) return structures[id];
+    const image = document.createElement("canvas");
+    image.width = image.height = size;
+    const c = image.getContext("2d");
+    const fill = (color, x, y, w, h) => {
+      c.fillStyle = color;
+      c.fillRect(x, y, w, h);
+    };
+    const roof = Object.keys(pitches).find(name => type.startsWith(name));
+    if (roof) {
+      const shade = pitches[roof];
+      const back = type.includes("Back");
+      const ridge = type.includes("Ridge");
+      const eave = type.includes("Eave");
+      for (let y = 0; y < 32; y++) {
+        const row = Math.floor(y / 8);
+        const light = ridge && y < 16 || back ? 2 : 3;
+        for (let x = 0; x < 32; x++) {
+          const seam = roof === "straw" ? (x + Math.floor(y / 6)) % 4 : (x + row % 2 * 4) % 8;
+          const n = detail(x, y, variant);
+          const tone = roof !== "straw" && y % 8 === 7 ? 1 : seam === 0 ? light - 1 : n % 8 === 1 ? light + 1 : light;
+          fill(shade[tone], x, y, 1, 1);
+        }
+      }
+      if (ridge) {
+        fill(shade[1], 0, 13, 32, 6);
+        fill(shade[5], 0, 13, 32, 2);
+        for (let x = 0; x < 32; x += 8) fill(shade[2], x, 15, 1, 4);
+      }
+      if (eave) {
+        fill(shade[0], 0, 28, 32, 4);
+        fill(shade[4], 0, 28, 32, 1);
+      }
+      if (type.endsWith("Left") || type.endsWith("Right")) {
+        const edge = type.endsWith("Left") ? 0 : 29;
+        fill(shade[0], edge, 0, 3, 32);
+        fill(shade[4], edge + (edge === 0 ? 2 : 0), 0, 1, 32);
+      }
+      if (type.endsWith("Stack")) {
+        fill("#252326", 12, 22, 16, 5);
+        fill("#574942", 12, 5, 12, 19);
+        fill("#978677", 12, 5, 8, 17);
+        for (let y = 10; y <= 20; y += 5) fill("#695b50", 12, y, 12, 1);
+        fill("#a69583", 10, 3, 16, 4);
+        fill("#39322c", 13, 3, 10, 2);
+      }
+    } else if (type === "stall") {
+      fill("#402e1b", 5, 12, 3, 19);
+      fill("#402e1b", 25, 12, 3, 19);
+      fill("#735138", 6, 21, 21, 7);
+      fill("#b28b53", 6, 19, 21, 3);
+      fill("#603b2f", 2, 5, 28, 12);
+      for (let x = 3; x < 29; x += 5) {
+        fill(x % 2 ? "#ac6751" : "#ccae75", x, 6, 4, 9);
+        fill(x % 2 ? "#834937" : "#a08657", x, 14, 4, 2);
+      }
+    } else if (type === "dock") {
+      fill("#65462e", 0, 0, 32, 32);
+      for (let y = 0; y < 32; y += 8) {
+        fill("#94704a", 0, y, 32, 1);
+        fill("#513524", 0, y + 7, 32, 1);
+        fill("#805b3b", y / 2, y + 3, 16, 1);
+      }
+      for (const y of [3, 22]) {
+        const x = variant % 2 ? 24 : 3;
+        fill("#3b271a", x, y + 2, 6, 7);
+        fill("#b69368", x, y, 6, 3);
+        fill("#a6967a", x - 1, y + 4, 8, 2);
+      }
+    } else if (type === "trough") {
+      fill("#38291d", 3, 11, 26, 15);
+      fill("#97704d", 4, 10, 24, 4);
+      fill("#684d35", 4, 15, 24, 8);
+      fill("#4f7373", 6, 14, 20, 6);
+      fill("#729393", 9, 15, 8, 1);
+      fill("#ac865b", 4, 21, 24, 2);
+    } else if (type !== "smialBank") {
+      const stone = type.startsWith("ashlar");
+      const wall = stone ? ["#797268", "#837a6a", "#908777", "#988e7b"] : ["#aa9070", "#b49975", "#bda481", "#c2ad8a"];
+      const beam = stone ? "#5e574e" : "#503928";
+      const hasWindow = type.endsWith("Window");
+      const hasDoor = type.endsWith("Door");
+      fill(beam, 0, 0, 32, 32);
+      for (let y = 3; y < 29; y++) for (let x = 0; x < 32; x++) {
+        const mortar = stone && ((y - 3) % 7 === 6 || (x + Math.floor((y - 3) / 7) % 2 * 8) % 16 === 0);
+        const n = detail(x, y, variant);
+        fill(mortar ? "#6c655a" : wall[n % 11 === 1 ? 0 : n % 9 === 1 ? 3 : 2], x, y, 1, 1);
+      }
+      if (!stone || type.endsWith("Corner")) {
+        fill(beam, 0, 0, 3, 32);
+        fill(beam, 29, 0, 3, 32);
+        if (!hasWindow && !hasDoor && !stone) {
+          for (let i = 0; i < 26; i++) fill(beam, 3 + i, 28 - i, 2, 2);
+        }
+      }
+      if (hasWindow || hasDoor) {
+        const inset = hasDoor ? 8 : 7;
+        const top = hasDoor ? 7 : 9;
+        const w = 32 - inset * 2;
+        const h = hasDoor ? 25 : 15;
+        fill(beam, inset, top, w, h);
+        fill(hasDoor ? "#30231a" : "#3c403a", inset + 2, top + 2, w - 4, h - 3);
+        if (hasDoor) {
+          for (let x = 11; x < 22; x += 4) fill("#775034", x, 10, 3, 20);
+          fill("#b79051", 19, 22, 2, 2);
+          fill("#9a8b73", 6, 30, 20, 2);
+        } else {
+          for (const x of [10, 17]) for (const y of [12, 18]) fill("#ae884d", x, y, 5, 4);
+          fill("#d1af70", 10, 12, 4, 1);
+          fill("#a48c6e", 6, 24, 20, 2);
+        }
+      }
+    }
+    return structures[id] = image;
+  }
+
+  function isStructure(type) {
+    return /^(ashlar|framed|clay|slate|straw|smialBank|stall|trough|dock)/.test(type);
+  }
+
   function object(c, type, x, y, vx = 0, vy = 0) {
     if (type === "rug" || type === "bunting") return decoration(c, type, x, y);
     if (type === "partyTree") {
@@ -212,6 +355,7 @@ const Art = (() => {
       return;
     }
     if (architecture.has(type)) return building(c, type, x, y, vx, vy);
+    if (isStructure(type)) return c.drawImage(structure(type, type === "dock" ? Number(vx < 228) : detail(vx, vy, 0) % 4), x, y);
     draw(c, sprites.objects[type], x, y, vx, vy, phase);
   }
 
@@ -266,6 +410,8 @@ const Art = (() => {
       return;
     }
     if (architecture.has(type)) return building(c, type, 0, 0, 0, 0);
+    if (type === "smialBank") return tile(c, "meadow", 0, 0);
+    if (isStructure(type)) return c.drawImage(structure(type, 0), 0, 0);
     if (type === "notice") return signpost(c, 0, 0);
     if (type === "rug" || type === "bunting") return decoration(c, type, 0, 0);
     const group = layer === "objects" ? sprites.objects : sprites.actors;

@@ -1111,10 +1111,10 @@
       for (let x = left; x <= right; x++) {
         const type = floor.ground[World.index(map, x, y)];
         Art.tile(c, type, px(x), py(y), x, y);
-        if (["path", "water", "river"].includes(type)) {
+        if (["path", "road", "water", "river"].includes(type)) {
           const neighbors = [[x, y - 1], [x + 1, y], [x, y + 1], [x - 1, y]];
           neighbors.forEach(([nx, ny], side) => {
-            if (World.inside(map, nx, ny) && ["grass", "meadow", "heath", "marsh"].includes(floor.ground[World.index(map, nx, ny)])) {
+            if (World.inside(map, nx, ny) && ["grass", "meadow", "heath", "marsh", "woodland"].includes(floor.ground[World.index(map, nx, ny)])) {
               Art.edge(c, px(x), py(y), side);
             }
           });
@@ -1124,7 +1124,7 @@
         const marker = floor.markers[key];
         if (object === "rug") Art.object(c, object, px(x), py(y), x, y);
         else if (object) draws.push({ y, depth: 0, draw: () => Art.object(c, object, px(x), py(y), x, y) });
-        if (marker?.type === "link" && (edit || !["smial", "smialBlue", "smialRed", "door"].includes(object))) Art.icon(c, "link", px(x), py(y));
+        if (marker?.type === "link" && (edit || !["smial", "smialBlue", "smialRed", "door", "ashlarDoor", "framedDoor", "dock"].includes(object))) Art.icon(c, "link", px(x), py(y));
         if (marker?.type === "notice") draws.push({ y, depth: 0, draw: () => Art.signpost(c, px(x), py(y)) });
         if (marker?.type === "ledger" && (edit || !hasLedger)) Art.icon(c, "ledger", px(x), py(y));
         if (edit && marker) {

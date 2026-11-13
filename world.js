@@ -5,7 +5,7 @@ const World = (() => {
   const ground = {
     grass: "Grass", path: "Dirt path", water: "Water", river: "River water", stone: "Flagstone",
     wood: "Planks", meadow: "Meadow", crop: "Crops", bridge: "Bridge", soil: "Garden soil", void: "Void",
-    heath: "Heath", marsh: "Marsh",
+    heath: "Heath", marsh: "Marsh", road: "Packed road", woodland: "Woodland floor",
   };
   const objects = {
     tree: "Oak", pine: "Pine", shrub: "Shrub", flowers: "Flowers",
@@ -28,6 +28,19 @@ const World = (() => {
     "millWheel", "bank", "table", "bed", "chest", "partyTree", "appleTree", "hedge", "bench", "basket",
     "hearth", "thatch", "thatchChimney", "tileChimney", "cottageWindow", "stoneWindow",
   ]);
+  const architecture = {
+    smialBank: "Smial earthwork", stall: "Market stall", trough: "Water trough", dock: "Ferry landing",
+    ...Object.fromEntries(["ashlar", "framed"].flatMap(wall => ["", "Door", "Corner", "Window"].map(part =>
+      [wall + part, (wall === "ashlar" ? "Stone " : "Timber ") + (part.toLowerCase() || "wall")]))),
+    ...Object.fromEntries(["clay", "slate", "straw"].flatMap(roof => [
+      ...["Back", "Ridge", "Slope", "Eave"].flatMap(pitch => ["", "Left", "Right"].map(end => [roof + pitch + end, [roof, pitch, end].filter(Boolean).join(" ")])),
+      [roof + "EaveStack", roof + " chimney at eave"],
+      [roof + "SlopeStack", roof + " chimney on slope"],
+    ])),
+  };
+  Object.assign(objects, architecture);
+  for (const part of Object.keys(architecture)) if (!part.endsWith("Door") && part !== "dock") solid.add(part);
+
   const key = (x, y) => `${x},${y}`;
   const index = (map, x, y) => y * map.width + x;
   const inside = (map, x, y) => x >= 0 && y >= 0 && x < map.width && y < map.height;

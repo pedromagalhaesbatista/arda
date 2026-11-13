@@ -2,7 +2,7 @@
 
 const root = new URL("./", self.location.href);
 const cachePrefix = `arda:${root.pathname}:`;
-const cacheName = `${cachePrefix}3`;
+const cacheName = `${cachePrefix}4`;
 const files = [
   "index.html",
   "style.css",
@@ -14,6 +14,35 @@ const files = [
   "equipment.js",
   "saves.js",
   "game.js",
+  "opentibia/ui/back.png",
+  "opentibia/ui/battle.png",
+  "opentibia/ui/body.png",
+  "opentibia/ui/chasemode.png",
+  "opentibia/ui/cross.png",
+  "opentibia/ui/feet.png",
+  "opentibia/ui/fightbalanced.png",
+  "opentibia/ui/fightdefensive.png",
+  "opentibia/ui/fightoffensive.png",
+  "opentibia/ui/finger.png",
+  "opentibia/ui/floor_down.png",
+  "opentibia/ui/floor_up.png",
+  "opentibia/ui/head.png",
+  "opentibia/ui/healthinfo.png",
+  "opentibia/ui/inventory.png",
+  "opentibia/ui/item.png",
+  "opentibia/ui/left-hand.png",
+  "opentibia/ui/legs.png",
+  "opentibia/ui/minimap.png",
+  "opentibia/ui/miniwindow.png",
+  "opentibia/ui/miniwindow_buttons.png",
+  "opentibia/ui/neck.png",
+  "opentibia/ui/panel_content.png",
+  "opentibia/ui/panel_side.png",
+  "opentibia/ui/questlog.png",
+  "opentibia/ui/right-hand.png",
+  "opentibia/ui/skills.png",
+  "opentibia/ui/zoom_in.png",
+  "opentibia/ui/zoom_out.png",
 ];
 const assets = new Set(files.map(file => new URL(file, root).href));
 const home = new URL("index.html", root).href;

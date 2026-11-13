@@ -16,3 +16,5 @@ To regenerate the bundled files, run from the Arda folder with Node 24 or newer.
 npx --yes esbuild@0.28.1 opentibia/source/runtime.ts --bundle --format=iife --global-name=OpenTibia --target=es2022 --outfile=opentibia/runtime.js
 npx --yes tsx@4.23.15 opentibia/build-assets.mts "/path/to/opentibia_sprite_pack"
 ```
+
+The desktop interface uses panel textures, inventory slot frames, window buttons, and control icons from the [OTClient desktop project](https://github.com/edubart/otclient/tree/dab86e610991092fe8b2471f7de55a7c986b3cd2/data/images). The imported PNGs and upstream MIT notice are in [ui](ui/).

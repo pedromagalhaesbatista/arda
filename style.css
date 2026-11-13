@@ -302,3 +302,124 @@ kbd { font-size: 10px; padding: 0 3px; }
   .world-controls { flex: 1; justify-content: flex-end; }
   .world-controls select { max-width: 115px; }
 }
+
+/* OTClient miniwindows and compact docked game view. */
+:root { --panel: #474747; --well: #323232; --line: #666; --muted: #c6c6c2; --gold: #d1b57a; color: #e4e3df; background: #303030; }
+body { font-family: "Arial", sans-serif; font-size: 12px; }
+.client { max-width: none; padding: 2px; }
+.topbar { height: 30px; min-height: 30px; margin: 0 0 2px; padding: 0 5px; background: #383838; }
+h1 { font: bold 14px Arial, sans-serif; }
+.brand-mark { width: 15px; height: 15px; font-size: 10px; }
+.modes, .modes button, .world-controls select { border-radius: 1px; }
+.modes button, .world-controls select { padding: 2px 5px; }
+.layout { grid-template-columns: 154px minmax(0, 1fr) 154px 178px; gap: 2px; align-items: stretch; }
+.dock { min-width: 0; background: #444 url("opentibia/ui/panel_side.png") center / 100% 100%; border: 1px solid #676767; }
+.dock, #play-panel { display: flex; flex-direction: column; gap: 2px; align-content: start; }
+.dock { padding: 1px; overflow: auto; max-height: calc(100dvh - 35px); }
+.panel { flex: 0 0 auto; border: 1px solid #747474; border-radius: 0; background: #474747 url("opentibia/ui/panel_content.png") center / 100% 100%; }
+.panel-heading, .game-heading { min-height: 20px; background: linear-gradient(#565656, #393939); border-bottom: 1px solid #707070; box-shadow: inset 0 1px #757575; padding: 0 4px; }
+.panel-heading { background: #454545 url("opentibia/ui/miniwindow.png") left -2px / auto 283px; gap: 3px; }
+.panel-heading h3 { font: bold 11px Arial, sans-serif; color: #dddcd5; letter-spacing: 0; text-transform: none; display: flex; align-items: center; gap: 3px; margin-right: auto; }
+.panel-heading img { width: 13px; height: 13px; object-fit: contain; image-rendering: pixelated; }
+.panel-heading > span, #floor-name, #coords { font-size: 10px; }
+.game-heading h2 { font: bold 11px Arial, sans-serif; }
+.view-tools button { min-width: 17px; height: 16px; padding: 0 3px; border-radius: 0; line-height: 1; }
+.game-panel { display: flex; flex-direction: column; border-radius: 0; border-color: #707070; min-width: 0; }
+.game-screen { display: grid; grid-template-columns: 34px minmax(0, 1fr) 34px 26px; min-width: 0; background: #444 url("opentibia/ui/panel_side.png") center / 100% 100%; gap: 2px; padding: 2px; }
+.viewport { height: clamp(335px, calc(100dvh - 175px), 1200px); border: 1px solid #777; box-shadow: 0 0 0 1px #181818; }
+.action-bar { display: flex; flex-direction: column; gap: 1px; padding: 0; overflow: auto; border: 0; }
+.action-bar button { flex: 0 0 32px; width: 32px; height: 32px; }
+.action-bar button, .slot, .slot.empty { border-radius: 0; background: #3c3c3c url("opentibia/ui/item.png") center / 100% 100%; box-shadow: none; border: 1px solid #646464; }
+.action-bar button:hover, .slot:hover { border-color: #ccbe96; }
+.action-bar canvas { width: 23px; height: 23px; }
+.action-bar .empty-action { color: #a2a2a2; }
+.status-rail { display: flex; gap: 2px; min-height: 0; }
+.rail-meter { flex: 1; position: relative; border: 1px solid #777; background: #171717; overflow: hidden; }
+.rail-meter > span { position: absolute; inset: auto 0 0; height: var(--fill, 0%); background: linear-gradient(90deg, #22642a, #73c64d); }
+.rail-xp > span { background: linear-gradient(90deg, #8b6622, #e2bc54); }
+.rail-meter b { position: absolute; inset: 0; display: grid; place-items: center; writing-mode: vertical-rl; font-size: 9px; color: white; text-shadow: 1px 1px #222; }
+.controls { background: #3d3d3d; min-height: 20px; padding: 2px 5px; gap: 5px; font-size: 10px; }
+.journal { flex: 1; background: #444 url("opentibia/ui/panel_content.png") center / 100% 100%; padding: 0 2px 2px; }
+.journal-heading { min-height: 20px; padding: 1px; }
+.console-tabs button, .game-saving button { font-size: 10px; padding: 2px 5px; border-radius: 0; }
+#journal { height: 81px; margin: 1px 0 0; background: #3a3a3a; border: 1px solid #646464; color: #e4e3df; }
+#journal li[data-channel="loot"] { color: #9dd881; }
+.minimap-body { display: grid; grid-template-columns: minmax(0, 1fr) 19px; gap: 2px; padding: 3px; }
+#minimap { margin: 0; width: 100%; height: auto; align-self: center; background: #161616; }
+.map-controls { display: grid; grid-template-columns: 1fr; align-content: start; gap: 1px; }
+.map-icon { border-radius: 0; padding: 0; width: 18px; height: 18px; background: #474747 var(--icon) center top / 16px auto no-repeat; }
+.map-icon:hover:not(:disabled) { background: #616161 var(--icon) center top / 16px auto no-repeat; }
+#map-zoom-in { --icon: url("opentibia/ui/zoom_in.png"); }
+#map-zoom-out { --icon: url("opentibia/ui/zoom_out.png"); }
+#map-up { --icon: url("opentibia/ui/floor_up.png"); }
+#map-down { --icon: url("opentibia/ui/floor_down.png"); }
+#map-center { --icon: url("opentibia/ui/cross.png"); }
+.landmarks summary { color: #dddcd4; padding: 3px 4px; }
+#landmark-list { grid-template-columns: minmax(0, 1fr); gap: 1px; padding: 0 3px 3px; }
+#landmark-list button { padding: 2px 3px; }
+.vitals { padding: 4px 5px 1px; }
+.skills { grid-template-columns: 1fr; gap: 2px; padding: 2px 5px 5px; }
+.stat, .vital-label { color: #e1dfd9; font-size: 11px; }
+.stat strong { font-variant-numeric: tabular-nums; }
+.readouts { margin: 4px 5px; font-size: 11px; }
+.readouts div { display: flex; justify-content: space-between; gap: 3px; padding-block: 2px; }
+.readouts dd { margin: 0; font-variant-numeric: tabular-nums; }
+.bestiary { list-style: none; margin: 0; padding: 3px; }
+.bestiary li { display: flex; gap: 4px; align-items: center; padding: 2px; border-bottom: 1px solid #626262; }
+.bestiary li span:last-child { margin-left: auto; font-variant-numeric: tabular-nums; }
+.bestiary canvas { image-rendering: pixelated; }
+#quest-status, .panel-note { padding: 4px; margin: 0; font-size: 11px; color: #ded8c3; }
+#battle-list { background: #393939; min-height: 55px; }
+.equipment { position: relative; }
+.equipment-slots { grid-template-columns: repeat(3, 34px); margin: 2px 23px 0 auto; max-width: none; width: max-content; padding: 0; gap: 1px; }
+.equipment-slot { height: 34px; width: 34px; padding: 0; grid-template: 1fr / 1fr; }
+.equipment-slot span { display: none; }
+.equipment-slot canvas { width: 30px; height: 30px; }
+.equipment-slot.empty { background: #3a3a3a var(--slot) center / 100% 100% no-repeat; }
+[data-slot="amulet"] { --slot: url("opentibia/ui/neck.png"); }
+[data-slot="head"] { --slot: url("opentibia/ui/head.png"); }
+[data-slot="pack"] { --slot: url("opentibia/ui/back.png"); }
+[data-slot="weapon"] { --slot: url("opentibia/ui/left-hand.png"); }
+[data-slot="body"] { --slot: url("opentibia/ui/body.png"); }
+[data-slot="shield"] { --slot: url("opentibia/ui/right-hand.png"); }
+[data-slot="ring"] { --slot: url("opentibia/ui/finger.png"); }
+[data-slot="legs"] { --slot: url("opentibia/ui/legs.png"); }
+[data-slot="feet"] { --slot: url("opentibia/ui/feet.png"); }
+.gear-stats { gap: 5px; font-size: 10px; }
+.fight-controls { padding: 2px; justify-content: center; gap: 3px; }
+#stop-button { flex: 0 0 33px; padding: 0 3px; border-radius: 0; font-size: 10px; }
+#stances, #pursuit { flex: 0 0 auto; gap: 2px; }
+#stances button, #pursuit button { flex: 0 0 20px; height: 20px; padding: 0; color: transparent; font-size: 0; border: 0; border-radius: 0; background: var(--fight-icon) left top / 20px 40px; }
+#stances button[aria-pressed="true"], #pursuit button[aria-pressed="true"] { background-position: left bottom; outline: 1px solid #d6be8b; }
+[data-stance="offensive"] { --fight-icon: url("opentibia/ui/fightoffensive.png"); }
+[data-stance="balanced"] { --fight-icon: url("opentibia/ui/fightbalanced.png"); }
+[data-stance="defensive"] { --fight-icon: url("opentibia/ui/fightdefensive.png"); }
+[data-pursuit] { --fight-icon: url("opentibia/ui/chasemode.png"); }
+[data-pursuit="stand"][aria-pressed="true"] { background-position: left top !important; }
+[data-pursuit="chase"] { background-position: left bottom !important; }
+.slots { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+.window-toggle { margin-left: 2px; flex: 0 0 14px; width: 14px; height: 14px; border: 0; border-radius: 0; padding: 0; background: url("opentibia/ui/miniwindow_buttons.png") 0 0; }
+.window-toggle:hover:not(:disabled) { background: url("opentibia/ui/miniwindow_buttons.png") 0 -14px; }
+.window-toggle[aria-expanded="false"] { background-position: -14px 0; }
+.panel[data-collapsed] > :not(.panel-heading) { display: none !important; }
+.client[data-editing] .layout { grid-template-columns: minmax(0, 1fr) 224px; }
+.client[data-editing] .game-screen { grid-template-columns: minmax(0, 1fr); }
+@media (max-width: 1050px) {
+  .layout { grid-template-columns: 134px minmax(0, 1fr) 158px; }
+  #tracking-dock { grid-row: 2; grid-column: 1; max-height: none; }
+}
+@media (max-width: 760px) {
+  .layout, .client[data-editing] .layout { grid-template-columns: minmax(0, 1fr); }
+  .game-panel { grid-row: 1; }
+  .sidebar { grid-row: 2; }
+  #tracking-dock, #left-dock { grid-column: 1; grid-row: auto; }
+  .dock { max-height: none; }
+  .game-screen { grid-template-columns: minmax(0, 1fr) 21px; }
+  .viewport { height: clamp(295px, 52dvh, 530px); }
+  .action-bar { grid-row: 2; flex-direction: row; }
+  .status-rail { grid-row: 1 / 3; grid-column: 2; }
+  #action-bar-right { grid-row: 3; grid-column: 1; }
+  .client[data-editing] .game-screen { display: block; }
+  .minimap-body { grid-template-columns: minmax(0, 220px) 19px; }
+  .equipment-slots { margin: 3px auto; }
+}

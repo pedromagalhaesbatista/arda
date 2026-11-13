@@ -51,12 +51,19 @@
   let openLoot = null;
   let nextHeal = 0;
   let consoleChannel = "all";
+  let minimapZoom = 1;
+  let gameZoom = 1;
+  let previewFloor = null;
+  let hunt;
+  let huntSecond = -1;
   let mouseMode = "context";
-  let actions = ["attack", "herb", "use", "stop", null, null, null, null];
+  let actions = ["attack", "herb", "use", "stop", null, null, null, null, null, null, null, null];
   try {
     if (localStorage.getItem("arda.mouse.v1") === "classic") mouseMode = "classic";
     const savedActions = JSON.parse(localStorage.getItem("arda.actions.v1"));
-    if (Array.isArray(savedActions) && savedActions.length === actions.length && savedActions.every(validAction)) actions = savedActions;
+    if (Array.isArray(savedActions) && [8, 12].includes(savedActions.length) && savedActions.every(validAction)) {
+      actions.splice(0, savedActions.length, ...savedActions);
+    }
   } catch {
     // Browser settings are optional.
   }
@@ -95,7 +102,7 @@
     const entry = document.createElement("li");
     entry.textContent = message;
     entry.dataset.channel = channel;
-    entry.hidden = consoleChannel === "combat" && channel !== "combat";
+    entry.hidden = consoleChannel !== "all" && channel !== consoleChannel;
     list.append(entry);
     if (list.childElementCount > 60) list.firstElementChild.remove();
     list.scrollTop = list.scrollHeight;
@@ -109,6 +116,9 @@
       sword: { level: 10, tries: 0, goal: 8 }, shielding: { level: 10, tries: 0, goal: 8 },
     };
     inventoryDirty = true;
+    hunt = { start: performance.now(), xp: 0, coins: 0, dealt: 0, received: 0, healing: 0 };
+    huntSecond = -1;
+    previewFloor = null;
     draggedItem = null;
     combatText = [];
     $("backpack-panel").hidden = false;
@@ -335,10 +345,20 @@
   }
 
   function drawMinimap() {
-    const floor = currentFloor();
-    const scale = Math.max(1, Math.min(Math.floor(minimap.width / map.width), Math.floor(minimap.height / map.height)));
-    const ox = Math.floor((minimap.width - map.width * scale) / 2);
-    const oy = Math.floor((minimap.height - map.height * scale) / 2);
+    const floor = World.floorAt(map, previewFloor) ?? currentFloor();
+    const pos = edit ? editorCenter : player;
+    const fit = Math.max(1, Math.min(Math.floor(minimap.width / map.width), Math.floor(minimap.height / map.height)));
+    const scale = fit * minimapZoom;
+    const origin = (size, tiles, tile) => Math.floor(size >= tiles * scale ? (size - tiles * scale) / 2 :
+      Math.min(0, Math.max(size - tiles * scale, size / 2 - (tile + .5) * scale)));
+    const ox = origin(minimap.width, map.width, pos.x);
+    const oy = origin(minimap.height, map.height, pos.y);
+    const isCurrent = floor === currentFloor();
+    $("floor-code").textContent = `Z ${floor.z}${isCurrent ? "" : " · Preview"}`;
+    $("map-up").disabled = !map.floors.some(entry => entry.z > floor.z);
+    $("map-down").disabled = !map.floors.some(entry => entry.z < floor.z);
+    $("map-zoom-in").disabled = minimapZoom === 4;
+    $("map-zoom-out").disabled = minimapZoom === 1;
     mini.fillStyle = "#151915";
     mini.fillRect(0, 0, minimap.width, minimap.height);
     for (let y = 0; y < map.height; y++) {
@@ -355,13 +375,14 @@
       mini.fillStyle = marker.type === "link" ? "#e6ca80" : "#d0ad72";
       mini.fillRect(ox + x * scale, oy + y * scale, scale, scale);
     }
-    const pos = edit ? editorCenter : player;
-    const x = ox + Math.round(pos.x) * scale;
-    const y = oy + Math.round(pos.y) * scale;
-    mini.fillStyle = "#1b1c17";
-    mini.fillRect(x - 1, y - 1, scale + 2, scale + 2);
-    mini.fillStyle = "#fff2c1";
-    mini.fillRect(x, y, scale, scale);
+    if (isCurrent) {
+      const x = ox + Math.round(pos.x) * scale;
+      const y = oy + Math.round(pos.y) * scale;
+      mini.fillStyle = "#1b1c17";
+      mini.fillRect(x - 1, y - 1, scale + 2, scale + 2);
+      mini.fillStyle = "#fff2c1";
+      mini.fillRect(x, y, scale, scale);
+    }
     return { scale, ox, oy };
   }
 
@@ -407,6 +428,47 @@
     return image;
   }
 
+  function updateHunt(now) {
+    const elapsed = Math.max(0, Math.floor((now - hunt.start) / 1000));
+    if (elapsed !== huntSecond) {
+      huntSecond = elapsed;
+      $("hunt-time").textContent = `${String(Math.floor(elapsed / 60)).padStart(2, "0")}:${String(elapsed % 60).padStart(2, "0")}`;
+    }
+    for (const [key, value] of Object.entries({
+      xp: hunt.xp, gold: hunt.coins, damage: hunt.dealt, received: hunt.received, healing: hunt.healing,
+    })) {
+      const output = $(`hunt-${key}`);
+      if (output.textContent !== String(value)) output.textContent = value;
+    }
+  }
+
+  function updateBestiary() {
+    const tracker = $("bestiary");
+    const entries = Object.entries(creatureNames).map(([type, name]) => {
+      const population = entities.filter(entity => entity.type === type);
+      return { type, name, count: population.filter(entity => entity.hp === 0).length, total: population.length };
+    }).filter(entry => entry.total > 0);
+    const signature = JSON.stringify(entries);
+    if (tracker.dataset.counts === signature) return;
+    tracker.dataset.counts = signature;
+    tracker.replaceChildren();
+    for (const { type, name, count, total } of entries) {
+      const row = document.createElement("li");
+      const label = document.createElement("span");
+      const progress = document.createElement("span");
+      label.textContent = name;
+      progress.textContent = `${count}/${total}`;
+      progress.title = "Defeated in this world";
+      row.append(thumbnail(context => Art.preview(context, type, "markers"), 20), label, progress);
+      tracker.append(row);
+    }
+    if (!entries.length) {
+      const row = document.createElement("li");
+      row.textContent = "No creatures in this world";
+      tracker.append(row);
+    }
+  }
+
   function updatePlayPanel() {
     const goal = player.level * 18;
     $("level").textContent = `Level ${player.level}`;
@@ -414,6 +476,14 @@
     $("health-fill").style.width = `${player.hp / player.maxHp * 100}%`;
     $("xp-value").textContent = `${player.xp} / ${goal}`;
     $("xp-fill").style.width = `${player.xp / goal * 100}%`;
+    for (const [id, value, max] of [["rail-health", player.hp, player.maxHp], ["rail-xp", player.xp, goal]]) {
+      const meter = $(id);
+      meter.style.setProperty("--fill", `${value / max * 100}%`);
+      meter.setAttribute("aria-valuemax", max);
+      meter.setAttribute("aria-valuenow", value);
+      meter.lastElementChild.textContent = `${value}/${max}`;
+    }
+    updateBestiary();
     $("skill").textContent = player.sword.level;
     $("shield-skill").textContent = player.shielding.level;
     for (const [id, skill] of [["sword-progress", player.sword], ["shield-progress", player.shielding]]) {
@@ -609,7 +679,7 @@
 
   function resize() {
     const box = canvas.getBoundingClientRect();
-    const scale = box.width < 540 ? 1 : 1.25;
+    const scale = (box.width < 540 ? 1 : 1.25) * gameZoom;
     canvas.width = Math.max(1, Math.round(box.width / scale));
     canvas.height = Math.max(1, Math.round(box.height / scale));
     c.imageSmoothingEnabled = false;
@@ -803,6 +873,7 @@
   function updateQuest() {
     const status = $("quest-status");
     status.hidden = quest === "available";
+    $("quest-empty").hidden = quest !== "available";
     if (quest === "available") return;
     const shire = map.adventure === "shire";
     const name = shire ? "The Mill Ledger" : "Rats in the Cellar";
@@ -882,6 +953,7 @@
         return true;
       }
       closeLoot();
+      previewFloor = null;
       Object.assign(player, { x: marker.x, y: marker.y, z: marker.z, motion: null });
       path = [];
       target = null;
@@ -953,7 +1025,10 @@
     const pile = openLoot;
     if (!pile || pile.z !== player.z || distance(player, pile) > 1) return;
     if (id === "coin" || id === null) {
-      if (pile.coins) Equipment.add(player.kit, "coin", pile.coins);
+      if (pile.coins) {
+        Equipment.add(player.kit, "coin", pile.coins);
+        hunt.coins += pile.coins;
+      }
       pile.coins = 0;
     }
     if (id === null) {
@@ -965,7 +1040,7 @@
       Equipment.add(player.kit, id);
       pile.items.splice(index, 1);
     }
-    journal(id ? `You take ${Equipment.items[id].name.toLowerCase()}.` : "You take the remaining loot.");
+    journal(id ? `You take ${Equipment.items[id].name.toLowerCase()}.` : "You take the remaining loot.", "loot");
     if (!pile.coins && !pile.items.length) {
       loot = loot.filter(item => item !== pile);
       closeLoot();
@@ -1111,9 +1186,11 @@
   }
 
   function updateActions() {
-    const bar = $("action-bar");
+    const left = $("action-bar");
+    const right = $("action-bar-right");
     const focused = document.activeElement.dataset.actionIndex;
-    bar.replaceChildren();
+    left.replaceChildren();
+    right.replaceChildren();
     actions.forEach((id, index) => {
       const button = document.createElement("button");
       button.type = "button";
@@ -1149,7 +1226,7 @@
         const presets = [["Attack", "attack"], ["Use healing herb", "herb"], ["Use nearby", "use"], ["Stop", "stop"], ["Clear slot", null]];
         showMenu(event, presets.map(([name, action]) => [name, () => setAction(index, action)]));
       });
-      bar.append(button);
+      (index < 6 ? left : right).append(button);
       if (String(index) === focused) button.focus({ preventScroll: true });
     });
   }
@@ -1173,6 +1250,7 @@
     }
     const name = creatureNames[target.type];
     target.hp -= damage;
+    hunt.dealt += damage;
     showCombatText(target, damage || "Miss", damage ? "#ff8e70" : "#f3d9a7", now);
     journal(damage ? `You hit the ${name.toLowerCase()} for ${damage}.` : `You miss the ${name.toLowerCase()}.`, "combat");
     if (target.hp === 0) {
@@ -1189,6 +1267,7 @@
       }
       journal(`${name} defeated. You gain ${xp} experience.`, "combat");
       player.xp += xp;
+      hunt.xp += xp;
       if (player.xp >= player.level * 18) {
         player.xp -= player.level * 18;
         player.level++;
@@ -1208,6 +1287,7 @@
     if (!player.kit.bag.herb) return journal("Your backpack is out of healing herbs.");
     const restored = Math.min(Equipment.items.herb.healing, player.maxHp - player.hp);
     player.hp += restored;
+    hunt.healing += restored;
     nextHeal = now + 1000;
     Equipment.add(player.kit, "herb", -1);
     showCombatText(player, `+${restored}`, "#a9da83", now);
@@ -1227,6 +1307,7 @@
         const result = Combat.mitigate(player, incoming, now < nextAttack);
         const damage = Math.min(player.hp, result.damage);
         player.hp -= damage;
+        hunt.received += damage;
         const name = creatureNames[entity.type].toLowerCase();
         if (result.blocked && player.kit.worn.shield && Combat.train(player.shielding)) {
           journal(`You advanced to shielding level ${player.shielding.level}.`);
@@ -1239,6 +1320,7 @@
         if (player.hp === 0) {
           const start = World.findStart(map);
           closeLoot();
+          previewFloor = null;
           Object.assign(player, { ...start, hp: player.maxHp, motion: null });
           path = [];
           pendingInteraction = null;
@@ -1485,7 +1567,9 @@
     $("play-panel").hidden = edit;
     $("edit-panel").hidden = !edit;
     $("controls").hidden = edit;
-    $("action-bar").hidden = edit;
+    for (const id of ["action-bar", "action-bar-right", "status-rail", "left-dock", "tracking-dock"]) $(id).hidden = edit;
+    document.querySelector(".client").toggleAttribute("data-editing", edit);
+    previewFloor = null;
     $("mouse-mode").disabled = edit;
     canvas.setAttribute("aria-label", edit ? "World editor. Click to paint. Use WASD or arrow keys to pan." : "World map. Use arrow keys or WASD to move.");
     canvas.focus({ preventScroll: true });
@@ -1643,6 +1727,7 @@
   }
 
   minimap.addEventListener("click", event => {
+    if (!edit && previewFloor !== null && previewFloor !== player.z) return;
     const { scale, ox, oy } = drawMinimap();
     const box = minimap.getBoundingClientRect();
     const left = box.left + minimap.clientLeft;
@@ -1658,6 +1743,60 @@
     }
     canvas.focus({ preventScroll: true });
   });
+
+  for (const [id, direction] of [["map-up", 1], ["map-down", -1]]) {
+    $(id).addEventListener("click", () => {
+      const z = previewFloor ?? currentFloor().z;
+      const floors = map.floors.filter(floor => (floor.z - z) * direction > 0)
+        .sort((a, b) => (a.z - b.z) * direction);
+      if (!floors.length) return;
+      if (edit) {
+        editFloor = floors[0].z;
+        $("floors").value = editFloor;
+        needsRefresh = true;
+      } else previewFloor = floors[0].z;
+      drawMinimap();
+    });
+  }
+  for (const [id, factor] of [["map-zoom-in", 2], ["map-zoom-out", .5]]) {
+    $(id).addEventListener("click", () => {
+      minimapZoom = Math.max(1, Math.min(4, minimapZoom * factor));
+      drawMinimap();
+    });
+  }
+  $("map-center").addEventListener("click", () => {
+    previewFloor = null;
+    minimapZoom = 1;
+    drawMinimap();
+  });
+
+  for (const panel of document.querySelectorAll("[data-window]")) {
+    const heading = panel.firstElementChild;
+    const name = heading.querySelector("h3").textContent;
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "window-toggle";
+    const update = collapsed => {
+      panel.toggleAttribute("data-collapsed", collapsed);
+      button.setAttribute("aria-expanded", String(!collapsed));
+      button.setAttribute("aria-label", `${collapsed ? "Expand" : "Collapse"} ${name}`);
+    };
+    update(false);
+    button.addEventListener("click", () => update(!panel.hasAttribute("data-collapsed")));
+    heading.append(button);
+  }
+
+  function changeGameZoom(direction) {
+    gameZoom = Math.min(2.5, Math.max(.75, gameZoom + direction * .25));
+    $("view-zoom-in").disabled = gameZoom === 2.5;
+    $("view-zoom-out").disabled = gameZoom === .75;
+    resize();
+    canvas.focus({ preventScroll: true });
+  }
+
+  $("view-zoom-in").addEventListener("click", () => changeGameZoom(1));
+  $("view-zoom-out").addEventListener("click", () => changeGameZoom(-1));
+  $("stop-button").addEventListener("click", stopActions);
 
   for (const [id, key] of [["stances", "stance"], ["pursuit", "pursuit"]]) {
     $(id).addEventListener("click", event => {
@@ -1683,26 +1822,27 @@
     });
   }
 
-  const actionBar = $("action-bar");
-  for (const type of ["dragover", "drop"]) {
-    actionBar.addEventListener(type, event => {
+  for (const actionBar of [$("action-bar"), $("action-bar-right")]) {
+    for (const type of ["dragover", "drop"]) {
+      actionBar.addEventListener(type, event => {
+        const button = event.target.closest("[data-action-index]");
+        if (!button || !draggedItem || draggedItem.origin === "loot" || !validAction(draggedItem.id)) return;
+        event.preventDefault();
+        if (type === "dragover") {
+          event.dataTransfer.dropEffect = "copy";
+          button.classList.add("drop-ready");
+        } else {
+          const id = draggedItem.id;
+          clearInventoryDrag();
+          setAction(Number(button.dataset.actionIndex), id);
+        }
+      });
+    }
+    actionBar.addEventListener("dragleave", event => {
       const button = event.target.closest("[data-action-index]");
-      if (!button || !draggedItem || draggedItem.origin === "loot" || !validAction(draggedItem.id)) return;
-      event.preventDefault();
-      if (type === "dragover") {
-        event.dataTransfer.dropEffect = "copy";
-        button.classList.add("drop-ready");
-      } else {
-        const id = draggedItem.id;
-        clearInventoryDrag();
-        setAction(Number(button.dataset.actionIndex), id);
-      }
+      if (button && !button.contains(event.relatedTarget)) button.classList.remove("drop-ready");
     });
   }
-  actionBar.addEventListener("dragleave", event => {
-    const button = event.target.closest("[data-action-index]");
-    if (button && !button.contains(event.relatedTarget)) button.classList.remove("drop-ready");
-  });
   $("close-loot").addEventListener("click", closeLoot);
   $("take-all").addEventListener("click", () => takeLoot());
 
@@ -1730,7 +1870,7 @@
       button.setAttribute("aria-pressed", String(button.dataset.channel === channel));
     }
     const list = $("journal");
-    for (const entry of list.children) entry.hidden = channel === "combat" && entry.dataset.channel !== "combat";
+    for (const entry of list.children) entry.hidden = channel !== "all" && entry.dataset.channel !== channel;
     list.scrollTop = list.scrollHeight;
   });
 
@@ -1747,6 +1887,9 @@
       if (!edit && key === "b") {
         event.preventDefault();
         $("battle-panel").hidden = !$("battle-panel").hidden;
+      } else if (!edit && ["=", "+", "-"].includes(key)) {
+        event.preventDefault();
+        changeGameZoom(key === "-" ? -1 : 1);
       }
       return;
     }
@@ -1758,7 +1901,7 @@
       return;
     }
     if (edit) return;
-    const hotkey = /^f([1-8])$/.exec(key);
+    const hotkey = /^f([1-9]|1[0-2])$/.exec(key);
     if (hotkey) {
       event.preventDefault();
       if (!event.repeat) runAction(actions[Number(hotkey[1]) - 1]);
@@ -1778,6 +1921,7 @@
   function frame(now) {
     if (!edit) {
       updateGame(now);
+      if (needsRefresh || Math.floor((now - hunt.start) / 1000) !== huntSecond) updateHunt(now);
       if (needsRefresh) savePending = true;
       if (savePending && now >= saveAfter) saveProgress();
     }
